@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Libreta Digital de Terreno</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#061E31] text-white min-h-screen p-6">
+  <div class="max-w-3xl mx-auto bg-[#0B3F65] border border-[#165685] rounded-2xl p-6 shadow-xl">
+    <span class="px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-full bg-[#E9972C]/25 text-[#E9972C] border border-[#E9972C]/50">Minería y Terreno</span>
+    <h1 class="text-xl font-bold text-[#E9972C] mt-2 mb-1">Libreta Digital de Terreno — Kamila Guerrero</h1>
+    <p class="text-xs text-[#B8D4E3] mb-5">Registro rápido de estaciones geológicas y muestreo (guardado automático local)</p>
+
+    <form onsubmit="guardarEstacion(event)" class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm mb-6">
+      <input required id="estId" placeholder="Estación (Ej: KG-01)" class="p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none" />
+      <input required id="estLit" placeholder="Litología / Mena" class="p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none" />
+      <input id="estEst" placeholder="Estructura (Ej: N35E/42SE)" class="p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none" />
+      <textarea id="estObs" rows="2" placeholder="Observaciones, alteración hidrotermal, mineralización..." class="sm:col-span-3 p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none"></textarea>
+      <button type="submit" class="sm:col-span-3 py-2.5 rounded-lg bg-[#E9972C] hover:bg-[#d68620] text-[#061E31] font-bold">Guardar Estación</button>
+    </form>
+
+    <div id="listaEstaciones" class="space-y-3 text-sm"></div>
+  </div>
+
+  <script>
+    let notas = JSON.parse(localStorage.getItem('kamila_libreta_v2')) || [];
+    function render() {
+      const div = document.getElementById('listaEstaciones');
+      div.innerHTML = notas.map((n, i) => `
+        <div class="p-3.5 rounded-xl bg-[#061E31] border border-[#165685] flex justify-between items-start">
+          <div>
+            <span class="font-bold text-[#E9972C]">${n.id}</span> • <span class="font-semibold">${n.lit}</span>
+            ${n.est ? `<span class="ml-2 text-xs px-2 py-0.5 rounded bg-[#6BB2C4]/20 text-[#6BB2C4]">${n.est}</span>` : ''}
+            <p class="text-xs text-[#B8D4E3] mt-1">${n.obs || 'Sin observaciones'}</p>
+          </div>
+          <button onclick="borrar(${i})" class="text-xs text-[#B8492C] font-semibold hover:underline">Eliminar</button>
+        </div>
+      `).join('');
+    }
+    function guardarEstacion(e) {
+      e.preventDefault();
+      notas.unshift({
+        id: document.getElementById('estId').value,
+        lit: document.getElementById('estLit').value,
+        est: document.getElementById('estEst').value,
+        obs: document.getElementById('estObs').value
+      });
+      localStorage.setItem('kamila_libreta_v2', JSON.stringify(notas));
+      e.target.reset();
+      render();
+    }
+    function borrar(i) {
+      notas.splice(i, 1);
+      localStorage.setItem('kamila_libreta_v2', JSON.stringify(notas));
+      render();
+    }
+    render();
+  </script>
+</body>
+</html>

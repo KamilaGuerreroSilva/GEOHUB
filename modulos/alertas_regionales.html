@@ -1,0 +1,1505 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monitor Unificado de Alertas por Región y Comuna | Kamila Guerrero</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Esri Leaflet -->
+  <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
+  <script src="https://unpkg.com/esri-leaflet-vector@4.2.3/dist/esri-leaflet-vector.js"></script>
+  <style>
+    body {
+      background-color: #061E31;
+      color: #FFFFFF;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #061E31; }
+    ::-webkit-scrollbar-thumb { background: #165685; border-radius: 4px; }
+    .leaflet-container {
+      background: #041524 !important;
+      font-family: inherit;
+    }
+    .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+      background: #0B3F65 !important;
+      color: #FFFFFF !important;
+      border: 1px solid #6BB2C4;
+    }
+    @keyframes pulse-dot {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.4; transform: scale(1.25); }
+    }
+    .live-dot {
+      animation: pulse-dot 2s infinite;
+    }
+  </style>
+</head>
+<body class="min-h-screen p-4 md:p-6">
+
+  <div class="max-w-7xl mx-auto space-y-5">
+    
+    <!-- ENCABEZADO -->
+    <div class="bg-[#0B3F65] border border-[#165685] rounded-2xl p-5 shadow-xl flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+      <div>
+        <div class="flex items-center gap-2.5 flex-wrap">
+          <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-[#E9972C]/20 text-[#E9972C] border border-[#E9972C]">
+            <span class="w-2 h-2 rounded-full bg-[#E9972C] live-dot"></span> Monitor Regional y Comunal • Kamila Guerrero
+          </span>
+          <span id="liveClock" class="text-xs font-mono text-[#6BB2C4]"></span>
+        </div>
+        <h1 class="text-xl md:text-2xl font-bold text-white mt-1.5 flex items-center gap-2">
+          <i data-lucide="radar" class="w-6 h-6 text-[#3892D0]"></i> Alertas Oficiales por Región y Comuna
+        </h1>
+        <p class="text-xs text-[#B8D4E3] mt-0.5">
+          Consolida <strong>DMC</strong>, <strong>Armada</strong>, <strong>SENAPRED</strong>, <strong>SERNAGEOMIN</strong>, <strong>SHOA</strong> y <strong>CONAF</strong>. Haz clic en cada región para desplegar sus comunas.
+        </p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <button onclick="openAddAlertModal()" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#3892D0] hover:bg-[#2d7eb8] text-white text-xs font-bold shadow-lg transition">
+          <i data-lucide="plus-circle" class="w-4 h-4"></i> + Nueva Alerta
+        </button>
+        <button onclick="fetchLiveAll()" id="btnSyncAll" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#647855] hover:bg-[#536446] text-white text-xs font-semibold transition">
+          <i data-lucide="refresh-cw" class="w-4 h-4"></i> Meteo + Sismos
+        </button>
+        <button onclick="shareNationalWhatsApp()" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-[#061E31] text-xs font-extrabold shadow transition">
+          <i data-lucide="share-2" class="w-4 h-4"></i> Resumen WhatsApp
+        </button>
+        <button onclick="openReportModal()" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#E9972C] hover:bg-[#d68620] text-[#061E31] text-xs font-bold transition">
+          <i data-lucide="file-text" class="w-4 h-4"></i> Boletín Único
+        </button>
+      </div>
+    </div>
+
+    <!-- BARRA DE BÚSQUEDA + FILTROS -->
+    <div class="bg-[#0B3F65] border border-[#165685] rounded-2xl p-4 space-y-3 shadow-lg">
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+        <div class="md:col-span-5 relative">
+          <i data-lucide="search" class="w-4 h-4 absolute left-3 top-2.5 text-[#6BB2C4]"></i>
+          <input type="text" id="searchAlertInput" oninput="renderDashboard()" placeholder="Buscar comuna (ej: Calama, Concón, Arauco), volcán o fenómeno..."
+            class="w-full pl-9 pr-3 py-2 rounded-xl bg-[#061E31] border border-[#165685] text-xs text-white focus:border-[#6BB2C4] outline-none" />
+        </div>
+
+        <div class="md:col-span-4">
+          <select id="filterRegion" onchange="onRegionFilterChange()" class="w-full p-2 rounded-xl bg-[#061E31] border border-[#165685] text-xs text-white outline-none">
+            <option value="TODAS">📍 Todas las Regiones (XV a XII)</option>
+          </select>
+        </div>
+
+        <div class="md:col-span-3">
+          <select id="filterAgency" onchange="renderDashboard()" class="w-full p-2 rounded-xl bg-[#061E31] border border-[#165685] text-xs text-white outline-none">
+            <option value="TODOS">🏛️ Todos los Organismos</option>
+            <option value="DMC">DMC (Meteorología)</option>
+            <option value="ARMADA">Armada / DIRECTEMAR</option>
+            <option value="SENAPRED">SENAPRED</option>
+            <option value="SERNAGEOMIN">SERNAGEOMIN</option>
+            <option value="CONAF">CONAF</option>
+            <option value="SHOA">SHOA</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Píldoras de Severidad + Enlaces a Portales Oficiales -->
+      <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 pt-2 border-t border-[#165685]/60">
+        <div class="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold" id="severityPills">
+          <button onclick="setSeverityFilter('TODAS')" data-sev="TODAS" class="sev-pill px-3 py-1 rounded-full bg-[#3892D0] text-white ring-2 ring-white transition">Todas</button>
+          <button onclick="setSeverityFilter('ALARMA')" data-sev="ALARMA" class="sev-pill px-3 py-1 rounded-full bg-[#061E31] text-[#f28b70] border border-[#B8492C]/50 hover:bg-[#B8492C]/20 transition">🔴 Rojas / Alarmas</button>
+          <button onclick="setSeverityFilter('ALERTA')" data-sev="ALERTA" class="sev-pill px-3 py-1 rounded-full bg-[#061E31] text-[#E9972C] border border-[#E9972C]/50 hover:bg-[#E9972C]/20 transition">🟠 Amarillas / Alertas</button>
+          <button onclick="setSeverityFilter('AVISO')" data-sev="AVISO" class="sev-pill px-3 py-1 rounded-full bg-[#061E31] text-[#6BB2C4] border border-[#3892D0]/50 hover:bg-[#3892D0]/20 transition">🟡 Avisos / ATP</button>
+          <button onclick="toggleAllRegionsExpand()" class="ml-1 px-3 py-1 rounded-full bg-[#061E31] hover:bg-[#165685] text-[#B8D4E3] border border-[#165685] transition">
+            📂 Desplegar / Contraer Todas
+          </button>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
+          <a href="https://www.meteochile.gob.cl/PortalDMC-web/index.xhtml" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">DMC ↗</a>
+          <a href="https://meteoarmada.directemar.cl/" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">Armada ↗</a>
+          <a href="https://senapred.cl/alertas/" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">SENAPRED ↗</a>
+          <a href="https://www.sernageomin.cl/red-nacional-de-vigilancia-volcanica/" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">SERNAGEOMIN ↗</a>
+          <a href="http://www.snamchile.cl/" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">SHOA ↗</a>
+          <button onclick="exportCSV()" class="ml-1 px-2 py-0.5 rounded bg-[#647855]/40 hover:bg-[#647855] text-white border border-[#647855] transition">CSV</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- RESUMEN KPI -->
+    <div id="kpiRow" class="grid grid-cols-2 sm:grid-cols-5 gap-3"></div>
+
+    <!-- LAYOUT PRINCIPAL: MAPA (4/12) + REGIONES CON COMUNAS DESPLEGABLES (8/12) -->
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      
+      <!-- COLUMNA IZQUIERDA: MAPA ESRI + REGISTRO DE CAMBIOS -->
+      <div class="lg:col-span-4 space-y-4 lg:sticky lg:top-4">
+        
+        <!-- Mapa Regional y Sísmico -->
+        <div class="bg-[#0B3F65] border border-[#165685] rounded-2xl overflow-hidden shadow-xl">
+          <div class="bg-[#061E31]/80 px-4 py-3 border-b border-[#165685] space-y-2">
+            <div class="flex justify-between items-center">
+              <div>
+                <h2 class="text-sm font-bold text-white flex items-center gap-1.5">
+                  <i data-lucide="map" class="w-4 h-4 text-[#6BB2C4]"></i> Mapa Regional (Esri)
+                </h2>
+                <p id="mapSubtitle" class="text-[11px] text-[#B8D4E3]">Haz clic en una región para desplegar comunas</p>
+              </div>
+              <button onclick="resetMapSelection()" class="text-[11px] px-2.5 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] border border-[#165685] transition">
+                Todo Chile
+              </button>
+            </div>
+
+            <div class="flex flex-wrap gap-1.5 text-[11px]">
+              <select id="basemapSelect" onchange="changeBasemap()" class="flex-1 p-1.5 rounded bg-[#0B3F65] border border-[#165685] text-white outline-none">
+                <option value="esri_dark">Esri Oscuro</option>
+                <option value="esri_topo">Esri Topográfico</option>
+                <option value="esri_sat">Esri Satelital</option>
+                <option value="esri_vector_key">Esri Vectorial (Key)</option>
+              </select>
+              <button onclick="promptEsriKey()" title="API Key Esri" class="px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] border border-[#165685] text-[#6BB2C4]">🔑</button>
+              <label class="flex items-center gap-1 px-2 py-1 rounded bg-[#0B3F65] border border-[#165685] cursor-pointer select-none">
+                <input type="checkbox" id="toggleQuakes" checked onchange="updateQuakeMarkers()" class="accent-[#E9972C]">
+                <span>Sismos</span>
+              </label>
+            </div>
+          </div>
+
+          <div id="chileMap" class="w-full h-[360px] z-10"></div>
+
+          <div class="p-2.5 bg-[#061E31]/90 border-t border-[#165685] flex flex-wrap justify-between gap-1.5 text-[10px]">
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#B8492C] inline-block"></span> Roja</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#E9972C] inline-block"></span> Amarilla</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#3892D0] inline-block"></span> Aviso/ATP</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#647855] inline-block"></span> Normal</span>
+          </div>
+        </div>
+
+        <!-- Registro de Cambios (Bitácora estilo Pudumaps) -->
+        <div class="bg-[#0B3F65] border border-[#165685] rounded-2xl overflow-hidden shadow-xl">
+          <div class="bg-[#061E31]/80 px-4 py-3 border-b border-[#165685] flex justify-between items-center">
+            <h3 class="text-sm font-bold text-white flex items-center gap-1.5">
+              <i data-lucide="history" class="w-4 h-4 text-[#E9972C]"></i> Registro de Cambios
+            </h3>
+            <button onclick="clearChangelog()" class="text-[10px] text-[#B8D4E3] hover:underline">Limpiar</button>
+          </div>
+          <div id="changelogList" class="p-3 space-y-2.5 max-h-[260px] overflow-y-auto text-xs">
+            <!-- Historial automático -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- COLUMNA DERECHA: REGIONES CON COMUNAS DESPLEGABLES Y ALERTAS (8/12) -->
+      <div id="regionsContainer" class="lg:col-span-8 space-y-4"></div>
+
+    </div>
+
+  </div>
+
+  <!-- TOAST -->
+  <div id="toastMsg" class="fixed bottom-5 right-5 bg-[#3892D0] text-white text-xs font-bold px-4 py-2.5 rounded-xl shadow-2xl hidden z-50">
+    Copiado
+  </div>
+
+  <!-- MODAL: REGISTRAR / EDITAR ALERTA CON SELECCIÓN DE COMUNAS -->
+  <div id="addAlertModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-[#0B3F65] border border-[#6BB2C4]/40 w-full max-w-2xl rounded-2xl p-6 shadow-2xl max-h-[92vh] overflow-y-auto">
+      <div class="flex justify-between items-center mb-3">
+        <h2 id="modalFormTitle" class="text-lg font-bold flex items-center gap-2">
+          <i data-lucide="bell-plus" class="w-5 h-5 text-[#E9972C]"></i> Ingresar Alerta / Aviso Oficial
+        </h2>
+        <button onclick="closeAddAlertModal()" class="p-1 rounded hover:bg-white/10"><i data-lucide="x" class="w-5 h-5"></i></button>
+      </div>
+
+      <!-- Plantillas Rápidas -->
+      <div class="mb-4 bg-[#061E31] p-2.5 rounded-xl border border-[#165685]">
+        <span class="block text-[10px] uppercase tracking-wider text-[#6BB2C4] font-bold mb-1.5">Plantillas Rápidas:</span>
+        <div class="flex flex-wrap gap-1.5 text-[11px]">
+          <button type="button" onclick="applyTemplate('marejadas')" class="px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition">🌊 Marejadas Armada</button>
+          <button type="button" onclick="applyTemplate('viento')" class="px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition">💨 Viento DMC</button>
+          <button type="button" onclick="applyTemplate('atp')" class="px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition">🛡️ ATP SENAPRED</button>
+          <button type="button" onclick="applyTemplate('volcan')" class="px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition">🌋 Alerta Volcánica</button>
+          <button type="button" onclick="applyTemplate('remocion')" class="px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition">⛰️ Remociones SERNAGEOMIN</button>
+        </div>
+      </div>
+
+      <form onsubmit="saveNewAlert(event)" class="space-y-3 text-sm">
+        <input type="hidden" id="editAlertId" value="" />
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-[#B8D4E3] mb-1">Región</label>
+            <select id="inRegion" required onchange="populateModalCommunes()" class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none"></select>
+          </div>
+          <div>
+            <label class="block text-xs text-[#B8D4E3] mb-1">Organismo Emisor</label>
+            <select id="inAgency" required class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none">
+              <option value="DMC">DMC (Meteorología)</option>
+              <option value="ARMADA">Armada / DIRECTEMAR</option>
+              <option value="SENAPRED">SENAPRED</option>
+              <option value="SERNAGEOMIN">SERNAGEOMIN</option>
+              <option value="CONAF">CONAF</option>
+              <option value="SHOA">SHOA</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-[#B8D4E3] mb-1">Nivel / Severidad</label>
+            <select id="inLevel" required class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none">
+              <option value="ALARMA">🔴 Alarma / Alerta Roja</option>
+              <option value="ALERTA">🟠 Alerta / Alerta Amarilla</option>
+              <option value="AVISO">🟡 Aviso / Alerta Temprana (ATP)</option>
+              <option value="VERDE">🟢 Vigilancia / Normal</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-xs text-[#B8D4E3] mb-1">Fenómeno / Evento</label>
+            <input required id="inEvent" type="text" placeholder="Ej: Marejadas Anormales / Viento" class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none" />
+          </div>
+        </div>
+
+        <!-- Selector interactivo de Comunas de la región elegida -->
+        <div class="bg-[#061E31] p-3 rounded-xl border border-[#165685]">
+          <div class="flex justify-between items-center mb-1.5">
+            <label class="text-xs text-[#6BB2C4] font-semibold">Comunas Afectadas (Haz clic para marcar):</label>
+            <div class="flex gap-2 text-[10px]">
+              <button type="button" onclick="selectAllModalCommunes(true)" class="text-[#6BB2C4] hover:underline">Todas</button>
+              <button type="button" onclick="selectAllModalCommunes(false)" class="text-[#f28b70] hover:underline">Ninguna</button>
+            </div>
+          </div>
+          <div id="modalCommunesGrid" class="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto p-1"></div>
+        </div>
+
+        <div>
+          <label class="block text-xs text-[#B8D4E3] mb-1">Sector Geográfico / Cobertura</label>
+          <input required id="inSector" type="text" placeholder="Ej: Borde costero, precordillera o comunas específicas" class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none" />
+        </div>
+
+        <div>
+          <label class="block text-xs text-[#B8D4E3] mb-1">Detalle Técnico y Vigencia</label>
+          <textarea required id="inDetail" rows="2" placeholder="Ej: Rachas de hasta 70 km/h. Vigencia: 23 al 25 de noviembre." class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none"></textarea>
+        </div>
+
+        <div>
+          <label class="block text-xs text-[#6BB2C4] mb-1">Enlace Directo al Boletín Oficial (Opcional)</label>
+          <input id="inUrl" type="url" placeholder="https://www.meteochile.gob.cl/..." class="w-full p-2 rounded-lg bg-[#061E31] border border-[#165685] text-xs outline-none" />
+        </div>
+
+        <div class="flex justify-end gap-2 pt-3">
+          <button type="button" onclick="closeAddAlertModal()" class="px-4 py-2 rounded-lg border border-[#165685] hover:bg-white/10">Cancelar</button>
+          <button type="submit" class="px-4 py-2 rounded-lg bg-[#3892D0] hover:bg-[#2d7eb8] text-white font-semibold">Guardar en Matriz</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL: BOLETÍN ÚNICO CONSOLIDADO -->
+  <div id="reportModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-[#0B3F65] border border-[#6BB2C4]/40 w-full max-w-3xl rounded-2xl p-6 shadow-2xl flex flex-col max-h-[88vh]">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-[#165685]">
+        <div>
+          <h2 class="text-lg font-bold text-[#E9972C]">Formato Único Consolidado por Región y Comunas</h2>
+          <p class="text-xs text-[#B8D4E3]">Listo para enviar por WhatsApp, correo o informe técnico</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="generateReportText('whatsapp')" id="btnFmtWa" class="px-3 py-1 rounded-lg bg-[#3892D0] text-white text-xs font-semibold">WhatsApp</button>
+          <button onclick="generateReportText('standard')" id="btnFmtStd" class="px-3 py-1 rounded-lg bg-[#061E31] text-[#B8D4E3] text-xs font-semibold border border-[#165685]">Técnico (.TXT)</button>
+          <button onclick="closeReportModal()" class="p-1.5 rounded hover:bg-white/10"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+      </div>
+
+      <textarea id="reportText" readonly class="w-full flex-1 my-4 p-4 rounded-xl bg-[#061E31] border border-[#165685] font-mono text-xs text-gray-100 leading-relaxed outline-none min-h-[320px]"></textarea>
+
+      <div class="flex flex-wrap justify-end gap-2">
+        <button onclick="sendReportDirectWhatsApp()" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#25D366] hover:bg-[#1ebe5d] text-[#061E31] text-xs font-extrabold">
+          <i data-lucide="send" class="w-4 h-4"></i> Abrir en WhatsApp
+        </button>
+        <button onclick="copyReport()" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#3892D0] hover:bg-[#2d7eb8] text-white text-xs font-bold">
+          <i data-lucide="copy" class="w-4 h-4"></i> Copiar Texto
+        </button>
+        <button onclick="downloadReport()" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#647855] hover:bg-[#536446] text-white text-xs font-bold">
+          <i data-lucide="download" class="w-4 h-4"></i> Descargar .TXT
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Base de datos de las 16 regiones de Chile con sus comunas principales
+    const REGIONES = [
+      {
+        id: 'XV', nombre: 'Región de Arica y Parinacota', lat: -18.4783, lon: -70.3126, matchKeys: ['arica'],
+        comunas: ['Arica', 'Camarones', 'Putre', 'General Lagos']
+      },
+      {
+        id: 'I', nombre: 'Región de Tarapacá', lat: -20.2307, lon: -70.1357, matchKeys: ['tarapaca', 'tarapacá'],
+        comunas: ['Iquique', 'Alto Hospicio', 'Pozo Almonte', 'Camiña', 'Colchane', 'Huara', 'Pica']
+      },
+      {
+        id: 'II', nombre: 'Región de Antofagasta', lat: -23.6509, lon: -70.3975, matchKeys: ['antofagasta'],
+        comunas: ['Antofagasta', 'Mejillones', 'Sierra Gorda', 'Taltal', 'Calama', 'Ollagüe', 'San Pedro de Atacama', 'Tocopilla', 'María Elena']
+      },
+      {
+        id: 'III', nombre: 'Región de Atacama', lat: -27.3668, lon: -70.3323, matchKeys: ['atacama'],
+        comunas: ['Copiapó', 'Caldera', 'Tierra Amarilla', 'Chañaral', 'Diego de Almagro', 'Vallenar', 'Alto del Carmen', 'Freirina', 'Huasco']
+      },
+      {
+        id: 'IV', nombre: 'Región de Coquimbo', lat: -29.9533, lon: -71.3395, matchKeys: ['coquimbo'],
+        comunas: ['La Serena', 'Coquimbo', 'Andacollo', 'La Higuera', 'Paiguano', 'Vicuña', 'Illapel', 'Canela', 'Los Vilos', 'Salamanca', 'Ovalle', 'Combarbalá', 'Monte Patria', 'Punitaqui', 'Río Hurtado']
+      },
+      {
+        id: 'V', nombre: 'Región de Valparaíso', lat: -33.0472, lon: -71.6127, matchKeys: ['valparaiso', 'valparaíso'],
+        comunas: ['Valparaíso', 'Casablanca', 'Concón', 'Juan Fernández', 'Puchuncaví', 'Quintero', 'Viña del Mar', 'Isla de Pascua', 'Los Andes', 'Calle Larga', 'Rinconada', 'San Esteban', 'La Ligua', 'Cabildo', 'Papudo', 'Petorca', 'Zapallar', 'Quillota', 'Calera', 'Hijuelas', 'La Cruz', 'Nogales', 'San Antonio', 'Algarrobo', 'Cartagena', 'El Quisco', 'El Tabo', 'Santo Domingo', 'San Felipe', 'Catemu', 'Llaillay', 'Panquehue', 'Putaendo', 'Santa María', 'Quilpué', 'Limache', 'Olmué', 'Villa Alemana']
+      },
+      {
+        id: 'RM', nombre: 'Región Metropolitana de Santiago', lat: -33.4489, lon: -70.6693, matchKeys: ['metropolitana', 'santiago'],
+        comunas: ['Santiago', 'Cerrillos', 'Cerro Navia', 'Conchalí', 'El Bosque', 'Estación Central', 'Huechuraba', 'Independencia', 'La Cisterna', 'La Florida', 'La Granja', 'La Pintana', 'La Reina', 'Las Condes', 'Lo Barnechea', 'Lo Espejo', 'Lo Prado', 'Macul', 'Maipú', 'Ñuñoa', 'Pedro Aguirre Cerda', 'Peñalolén', 'Providencia', 'Pudahuel', 'Quilicura', 'Quinta Normal', 'Recoleta', 'Renca', 'San Joaquín', 'San Miguel', 'San Ramón', 'Vitacura', 'Puente Alto', 'Pirque', 'San José de Maipo', 'Colina', 'Lampa', 'Tiltil', 'San Bernardo', 'Buin', 'Calera de Tango', 'Paine', 'Melipilla', 'Alhué', 'Curacaví', 'María Pinto', 'San Pedro', 'Talagante', 'El Monte', 'Isla de Maipo', 'Padre Hurtado', 'Peñaflor']
+      },
+      {
+        id: 'VI', nombre: "Región de O'Higgins", lat: -34.1708, lon: -70.7444, matchKeys: ['higgins', 'libertador'],
+        comunas: ['Rancagua', 'Codegua', 'Coinco', 'Coltauco', 'Doñihue', 'Graneros', 'Las Cabras', 'Machalí', 'Malloa', 'Mostazal', 'Olivar', 'Peumo', 'Pichidegua', 'Quinta de Tilcoco', 'Rengo', 'Requínoa', 'San Vicente', 'Pichilemu', 'La Estrella', 'Litueche', 'Marchihue', 'Navidad', 'Paredones', 'San Fernando', 'Chépica', 'Chimbarongo', 'Lolol', 'Nancagua', 'Palmilla', 'Peralillo', 'Placilla', 'Pumanque', 'Santa Cruz']
+      },
+      {
+        id: 'VII', nombre: 'Región del Maule', lat: -35.4264, lon: -71.6554, matchKeys: ['maule'],
+        comunas: ['Talca', 'Constitución', 'Curepto', 'Empedrado', 'Maule', 'Pelarco', 'Pencahue', 'Río Claro', 'San Clemente', 'San Rafael', 'Cauquenes', 'Chanco', 'Pelluhue', 'Curicó', 'Hualañé', 'Licantén', 'Molina', 'Rauco', 'Romeral', 'Sagrada Familia', 'Teno', 'Vichuquén', 'Linares', 'Colbún', 'Longaví', 'Parral', 'Retiro', 'San Javier', 'Villa Alegre', 'Yerbas Buenas']
+      },
+      {
+        id: 'XVI', nombre: 'Región de Ñuble', lat: -36.6066, lon: -72.1034, matchKeys: ['nuble', 'ñuble'],
+        comunas: ['Chillán', 'Bulnes', 'Chillán Viejo', 'El Carmen', 'Pemuco', 'Pinto', 'Quillón', 'San Ignacio', 'Yungay', 'Quirihue', 'Cobquecura', 'Coelemu', 'Ninhue', 'Portezuelo', 'Ránquil', 'Treguaco', 'San Carlos', 'Coihueco', 'Ñiquén', 'San Fabián', 'San Nicolás']
+      },
+      {
+        id: 'VIII', nombre: 'Región del Biobío', lat: -36.8201, lon: -73.0444, matchKeys: ['biobio', 'biobío', 'bío-bío'],
+        comunas: ['Concepción', 'Coronel', 'Chiguayante', 'Florida', 'Hualqui', 'Lota', 'Penco', 'San Pedro de la Paz', 'Santa Juana', 'Talcahuano', 'Tomé', 'Hualpén', 'Lebu', 'Arauco', 'Cañete', 'Contulmo', 'Curanilahue', 'Los Álamos', 'Tirúa', 'Los Ángeles', 'Antuco', 'Cabrero', 'Laja', 'Mulchén', 'Nacimiento', 'Negrete', 'Quilaco', 'Quilleco', 'San Rosendo', 'Santa Bárbara', 'Tucapel', 'Yumbel', 'Alto Biobío']
+      },
+      {
+        id: 'IX', nombre: 'Región de La Araucanía', lat: -38.7359, lon: -72.5904, matchKeys: ['araucania', 'araucanía'],
+        comunas: ['Temuco', 'Carahue', 'Cunco', 'Curarrehue', 'Freire', 'Galvarino', 'Gorbea', 'Lautaro', 'Loncoche', 'Melipeuco', 'Nueva Imperial', 'Padre Las Casas', 'Perquenco', 'Pitrufquén', 'Pucón', 'Saavedra', 'Teodoro Schmidt', 'Toltén', 'Vilcún', 'Villarrica', 'Cholchol', 'Angol', 'Collipulli', 'Curacautín', 'Ercilla', 'Lonquimay', 'Los Sauces', 'Lumaco', 'Purén', 'Renaico', 'Traiguén', 'Victoria']
+      },
+      {
+        id: 'XIV', nombre: 'Región de Los Ríos', lat: -39.8142, lon: -73.2459, matchKeys: ['rios', 'ríos'],
+        comunas: ['Valdivia', 'Corral', 'Lanco', 'Los Lagos', 'Máfil', 'Mariquina', 'Paillaco', 'Panguipulli', 'La Unión', 'Futrono', 'Lago Ranco', 'Río Bueno']
+      },
+      {
+        id: 'X', nombre: 'Región de Los Lagos', lat: -41.4693, lon: -72.9424, matchKeys: ['lagos'],
+        comunas: ['Puerto Montt', 'Calbuco', 'Cochamó', 'Fresia', 'Frutillar', 'Los Muermos', 'Llanquihue', 'Maullín', 'Puerto Varas', 'Castro', 'Ancud', 'Chonchi', 'Curaco de Vélez', 'Dalcahue', 'Puqueldón', 'Queilén', 'Quellón', 'Quemchi', 'Quinchao', 'Osorno', 'Puerto Octay', 'Purranque', 'Puyehue', 'Río Negro', 'San Juan de la Costa', 'San Pablo', 'Chaitén', 'Futaleufú', 'Hualaihué', 'Palena']
+      },
+      {
+        id: 'XI', nombre: 'Región de Aysén', lat: -45.5752, lon: -72.0662, matchKeys: ['aysen', 'aysén', 'aisén'],
+        comunas: ['Coyhaique', 'Lago Verde', 'Aysén', 'Cisnes', 'Guaitecas', 'Cochrane', "O'Higgins", 'Tortel', 'Chile Chico', 'Río Ibáñez']
+      },
+      {
+        id: 'XII', nombre: 'Región de Magallanes y Antártica', lat: -53.1638, lon: -70.9171, matchKeys: ['magallanes'],
+        comunas: ['Punta Arenas', 'Laguna Blanca', 'Río Verde', 'San Gregorio', 'Cabo de Hornos', 'Antártica', 'Porvenir', 'Primavera', 'Timaukel', 'Natales', 'Torres del Paine']
+      }
+    ];
+
+    const defaultAlerts = [
+      {
+        id: 'a1',
+        region: 'Región de Valparaíso',
+        agency: 'ARMADA',
+        level: 'AVISO',
+        event: 'Marejadas Anormales',
+        sector: 'Borde costero regional y bahías abiertas',
+        comunas: ['Valparaíso', 'Viña del Mar', 'Concón', 'Quintero', 'Puchuncaví', 'Papudo', 'Zapallar', 'Algarrobo', 'El Quisco', 'El Tabo', 'Cartagena', 'San Antonio', 'Juan Fernández'],
+        detail: 'Oleaje del suroeste generando fuerte rompiente en bahías abiertas. Precaución en trabajos geológicos costeros.',
+        updated: 'Boletín Marítimo'
+      },
+      {
+        id: 'a2',
+        region: 'Región de Valparaíso',
+        agency: 'SENAPRED',
+        level: 'ALERTA',
+        event: 'Alerta Amarilla por Evento Meteorológico y Viento',
+        sector: 'Precordillera y valles interiores',
+        comunas: ['Los Andes', 'San Esteban', 'Calle Larga', 'Rinconada', 'San Felipe', 'Putaendo', 'Santa María', 'Catemu', 'Llaillay', 'Panquehue', 'La Ligua', 'Cabildo', 'Petorca'],
+        detail: 'Sube de Temprana Preventiva a Amarilla por viento moderado a fuerte y probabilidad de remociones menores.',
+        updated: 'Declaración SENAPRED'
+      },
+      {
+        id: 'a3',
+        region: 'Región de Antofagasta',
+        agency: 'DMC',
+        level: 'ALERTA',
+        event: 'Tormentas Eléctricas y Precipitaciones en Cordillera',
+        sector: 'Provincia de El Loa y sector cordillerano',
+        comunas: ['Calama', 'San Pedro de Atacama', 'Ollagüe'],
+        detail: 'Desarrollo convectivo vespertino con chubascos aislados. Evaluar crecidas repentinas en quebradas.',
+        updated: 'Alerta Meteorológica'
+      },
+      {
+        id: 'a4',
+        region: 'Región de Antofagasta',
+        agency: 'SENAPRED',
+        level: 'ALERTA',
+        event: 'Alerta Amarilla por Actividad Geológica / Minera',
+        sector: 'Comunas costeras y pampa central',
+        comunas: ['Antofagasta', 'María Elena', 'Sierra Gorda'],
+        detail: 'Monitoreo técnico reforzado en infraestructura crítica y faenas.',
+        updated: 'Boletín Regional'
+      },
+      {
+        id: 'a5',
+        region: 'Región del Biobío',
+        agency: 'CONAF',
+        level: 'ALARMA',
+        event: 'Alerta Roja / Botón Rojo — Riesgo Extremo',
+        sector: 'Provincia de Arauco y sector cordillerano',
+        comunas: ['Arauco', 'Cañete', 'Curanilahue', 'Lebu', 'Los Álamos', 'Tirúa'],
+        detail: 'Humedad del combustible fino muerto < 6% con rachas de viento Puelche.',
+        updated: 'Boletín CONAF / SENAPRED'
+      },
+      {
+        id: 'a6',
+        region: 'Región de La Araucanía',
+        agency: 'SERNAGEOMIN',
+        level: 'ALERTA',
+        event: 'Alerta Técnica Amarilla — Volcán Villarrica',
+        sector: 'Zona proximal del cráter (radio de exclusión 500 m)',
+        comunas: ['Villarrica', 'Pucón', 'Curarrehue'],
+        detail: 'Actividad superficial asociada a desgasificación y sismicidad volcano-tectónica moderada (OVDAS).',
+        updated: 'REAV Vigente'
+      }
+    ];
+
+    const defaultChangelog = [
+      {
+        time: 'Hoy, 01:05 p. m.',
+        title: 'Sube de Temprana Preventiva a Amarilla • 13 comunas',
+        detail: 'Valparaíso: Rinconada, Los Andes, Calle Larga, San Felipe, La Ligua, Panquehue, Llaillay, Petorca, Putaendo, San Esteban, Santa María, Catemu, Cabildo',
+        level: 'ALERTA'
+      },
+      {
+        time: 'Hoy, 11:30 a. m.',
+        title: 'Sube de Temprana Preventiva a Amarilla • 3 comunas',
+        detail: 'Antofagasta: Calama, San Pedro de Atacama, Ollagüe',
+        level: 'ALERTA'
+      },
+      {
+        time: 'Ayer, 06:15 p. m.',
+        title: 'Nueva declaración de Alerta Roja • 6 comunas',
+        detail: 'Biobío: Arauco, Cañete, Curanilahue, Lebu, Los Álamos, Tirúa',
+        level: 'ALARMA'
+      }
+    ];
+
+    let alerts = JSON.parse(localStorage.getItem('kamila_alertas_v4')) || defaultAlerts;
+    let changelog = JSON.parse(localStorage.getItem('kamila_changelog_v4')) || defaultChangelog;
+    let expandedRegions = new Set(['Región de Valparaíso', 'Región de Antofagasta']); // Regiones desplegadas inicialmente
+    let selectedCommuneFilter = {}; // { [regNombre]: 'Calama' }
+    let liveMeteoCache = {};
+    let recentQuakes = [];
+    let selectedSeverity = 'TODAS';
+    let map = null;
+    let regionsGeoLayer = null;
+    let markersLayer = null;
+    let quakesLayer = null;
+    let currentBasemapLayer = null;
+    let hasGeoJsonPolygons = false;
+
+    const agencyMeta = {
+      DMC: { label: 'DMC', color: '#3892D0', icon: 'cloud-rain', officialUrl: 'https://www.meteochile.gob.cl/PortalDMC-web/index.xhtml' },
+      ARMADA: { label: 'ARMADA / DIRECTEMAR', color: '#6BB2C4', icon: 'waves', officialUrl: 'https://meteoarmada.directemar.cl/' },
+      SENAPRED: { label: 'SENAPRED', color: '#E9972C', icon: 'shield-alert', officialUrl: 'https://senapred.cl/alertas/' },
+      SERNAGEOMIN: { label: 'SERNAGEOMIN', color: '#B8492C', icon: 'mountain-snow', officialUrl: 'https://www.sernageomin.cl/red-nacional-de-vigilancia-volcanica/' },
+      CONAF: { label: 'CONAF', color: '#647855', icon: 'flame', officialUrl: 'https://www.conaf.cl/incendios-forestales/prevencion/boton-rojo/' },
+      SHOA: { label: 'SHOA', color: '#3892D0', icon: 'activity', officialUrl: 'http://www.snamchile.cl/' }
+    };
+
+    const levelMeta = {
+      ALARMA: { label: 'ALERTA ROJA / ALARMA', bg: '#B8492C', dot: '#ef4444', text: '#FFFFFF', weight: 4, emoji: String.fromCodePoint(0x1F534) },
+      ALERTA: { label: 'ALERTA AMARILLA', bg: '#E9972C', dot: '#f59e0b', text: '#061E31', weight: 3, emoji: String.fromCodePoint(0x1F7E1) },
+      AVISO:  { label: 'AVISO / ATP', bg: '#3892D0', dot: '#38bdf8', text: '#FFFFFF', weight: 2, emoji: String.fromCodePoint(0x1F535) },
+      VERDE:  { label: 'VIGILANCIA', bg: '#647855', dot: '#22c55e', text: '#FFFFFF', weight: 1, emoji: String.fromCodePoint(0x1F7E2) }
+    };
+
+    function showToast(msg) {
+      const t = document.getElementById('toastMsg');
+      t.textContent = msg;
+      t.classList.remove('hidden');
+      setTimeout(() => t.classList.add('hidden'), 2400);
+    }
+
+    function addLogEntry(title, detail, level = 'AVISO') {
+      const now = new Date().toLocaleString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+      changelog.unshift({ time: now, title, detail, level });
+      if (changelog.length > 30) changelog.pop();
+      localStorage.setItem('kamila_changelog_v4', JSON.stringify(changelog));
+      renderChangelog();
+    }
+
+    function clearChangelog() {
+      changelog = [];
+      localStorage.setItem('kamila_changelog_v4', JSON.stringify(changelog));
+      renderChangelog();
+    }
+
+    function renderChangelog() {
+      const div = document.getElementById('changelogList');
+      if (changelog.length === 0) {
+        div.innerHTML = `<p class="text-[#B8D4E3] text-center py-4">Sin movimientos recientes registrados.</p>`;
+        return;
+      }
+      div.innerHTML = changelog.map(item => {
+        const dotColor = levelMeta[item.level] ? levelMeta[item.level].dot : '#38bdf8';
+        return `
+          <div class="p-2.5 rounded-xl bg-[#061E31]/80 border border-[#165685]/70">
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex items-center gap-1.5 font-bold text-white">
+                <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${dotColor}"></span>
+                <span>${item.title}</span>
+              </div>
+            </div>
+            <span class="text-[10px] text-[#6BB2C4] block mt-0.5 ml-4">${item.time}</span>
+            <p class="text-[11px] text-[#B8D4E3] mt-1 ml-4 leading-snug">${item.detail}</p>
+          </div>
+        `;
+      }).join('');
+    }
+
+    // Desplegar / Contraer una región al hacer clic en ella
+    function toggleRegionExpand(regNombre) {
+      if (expandedRegions.has(regNombre)) {
+        expandedRegions.delete(regNombre);
+      } else {
+        expandedRegions.add(regNombre);
+      }
+      renderDashboard();
+    }
+
+    function toggleAllRegionsExpand() {
+      if (expandedRegions.size > 0) {
+        expandedRegions.clear();
+      } else {
+        REGIONES.forEach(r => expandedRegions.add(r.nombre));
+      }
+      renderDashboard();
+    }
+
+    // Filtrar por una comuna específica al hacer clic en su píldora dentro de la región
+    function toggleCommuneFilter(regNombre, comuna) {
+      if (selectedCommuneFilter[regNombre] === comuna) {
+        delete selectedCommuneFilter[regNombre];
+      } else {
+        selectedCommuneFilter[regNombre] = comuna;
+      }
+      renderDashboard();
+    }
+
+    function setSeverityFilter(sev) {
+      selectedSeverity = sev;
+      document.querySelectorAll('.sev-pill').forEach(btn => {
+        if (btn.dataset.sev === sev) {
+          btn.classList.add('ring-2', 'ring-white');
+        } else {
+          btn.classList.remove('ring-2', 'ring-white');
+        }
+      });
+      renderDashboard();
+    }
+
+    function initSelectors() {
+      const fReg = document.getElementById('filterRegion');
+      const inReg = document.getElementById('inRegion');
+      REGIONES.forEach(r => {
+        const opt1 = document.createElement('option');
+        opt1.value = r.nombre;
+        opt1.textContent = `${r.id} - ${r.nombre} (${r.comunas.length} comunas)`;
+        fReg.appendChild(opt1);
+
+        const opt2 = document.createElement('option');
+        opt2.value = r.nombre;
+        opt2.textContent = `${r.id} - ${r.nombre}`;
+        inReg.appendChild(opt2);
+      });
+      populateModalCommunes();
+    }
+
+    function populateModalCommunes(selectedList = []) {
+      const regName = document.getElementById('inRegion').value;
+      const regObj = REGIONES.find(r => r.nombre === regName);
+      const grid = document.getElementById('modalCommunesGrid');
+      if (!regObj) return;
+
+      grid.innerHTML = regObj.comunas.map(c => {
+        const checked = selectedList.includes(c) ? 'checked' : '';
+        return `
+          <label class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#0B3F65] border border-[#165685] text-[11px] cursor-pointer hover:border-[#6BB2C4]">
+            <input type="checkbox" name="modalComuna" value="${c}" ${checked} class="accent-[#E9972C]">
+            <span>${c}</span>
+          </label>
+        `;
+      }).join('');
+    }
+
+    function selectAllModalCommunes(state) {
+      document.querySelectorAll('input[name="modalComuna"]').forEach(cb => cb.checked = state);
+    }
+
+    function initMap() {
+      map = L.map('chileMap', {
+        zoomControl: true,
+        attributionControl: false
+      }).setView([-35.6, -71.5], 4);
+
+      changeBasemap();
+      markersLayer = L.layerGroup().addTo(map);
+      quakesLayer = L.layerGroup().addTo(map);
+      loadChilePolygons();
+    }
+
+    async function loadChilePolygons() {
+      try {
+        const res = await fetch('https://raw.githubusercontent.com/caracena/chile-geojson/master/regiones.json');
+        if (!res.ok) throw new Error('GeoJSON no disponible');
+        const geoData = await res.json();
+        hasGeoJsonPolygons = true;
+
+        regionsGeoLayer = L.geoJSON(geoData, {
+          style: feature => getRegionPolygonStyle(feature),
+          onEachFeature: (feature, layer) => {
+            const matchedReg = matchFeatureToRegion(feature);
+            if (matchedReg) {
+              layer.on('click', () => {
+                document.getElementById('filterRegion').value = matchedReg.nombre;
+                expandedRegions.add(matchedReg.nombre);
+                onRegionFilterChange();
+              });
+              layer.bindTooltip(() => {
+                const count = alerts.filter(a => a.region === matchedReg.nombre).length;
+                return `<strong>${matchedReg.id} - ${matchedReg.nombre}</strong><br>${count} alerta(s) • Clic para desplegar comunas`;
+              }, { sticky: true });
+            }
+          }
+        }).addTo(map);
+        updateMapVisuals();
+      } catch (e) {
+        hasGeoJsonPolygons = false;
+        updateMapVisuals();
+      }
+    }
+
+    function matchFeatureToRegion(feature) {
+      const props = JSON.stringify(feature.properties || {}).toLowerCase();
+      return REGIONES.find(r => r.matchKeys.some(k => props.includes(k)));
+    }
+
+    function getRegionSeverityColor(regNombre) {
+      const selAgency = document.getElementById('filterAgency').value;
+      const regAlerts = alerts.filter(a => a.region === regNombre && (selAgency === 'TODOS' || a.agency === selAgency));
+      let maxWeight = 0;
+      let color = '#647855';
+      regAlerts.forEach(a => {
+        if (levelMeta[a.level].weight > maxWeight) {
+          maxWeight = levelMeta[a.level].weight;
+          color = levelMeta[a.level].bg;
+        }
+      });
+      return { color, count: regAlerts.length };
+    }
+
+    function getRegionPolygonStyle(feature) {
+      const matched = matchFeatureToRegion(feature);
+      const selRegion = document.getElementById('filterRegion').value;
+      if (!matched) return { fillColor: '#647855', fillOpacity: 0.25, color: '#6BB2C4', weight: 1 };
+
+      const { color, count } = getRegionSeverityColor(matched.nombre);
+      const isSelected = selRegion === matched.nombre;
+      return {
+        fillColor: color,
+        fillOpacity: isSelected ? 0.65 : (count > 0 ? 0.45 : 0.18),
+        color: isSelected ? '#FFFFFF' : '#6BB2C4',
+        weight: isSelected ? 2.5 : 1
+      };
+    }
+
+    function promptEsriKey() {
+      const current = localStorage.getItem('kamila_esri_apikey') || '';
+      const key = prompt('Pega tu API Key de ArcGIS / Esri (déjalo vacío para usar los mapas Esri gratuitos sin clave):', current);
+      if (key !== null) {
+        localStorage.setItem('kamila_esri_apikey', key.trim());
+        if (key.trim()) document.getElementById('basemapSelect').value = 'esri_vector_key';
+        changeBasemap();
+      }
+    }
+
+    function changeBasemap() {
+      if (!map) return;
+      if (currentBasemapLayer) map.removeLayer(currentBasemapLayer);
+      const mode = document.getElementById('basemapSelect').value;
+      const apiKey = localStorage.getItem('kamila_esri_apikey') || '';
+
+      if (mode === 'esri_vector_key') {
+        if (!apiKey) {
+          alert('Primero ingresa tu API Key de Esri haciendo clic en el botón 🔑.');
+          document.getElementById('basemapSelect').value = 'esri_dark';
+          return changeBasemap();
+        }
+        currentBasemapLayer = L.esri.Vector.vectorBasemapLayer('arcgis/dark-gray', { apikey: apiKey }).addTo(map);
+      } else if (mode === 'esri_topo') {
+        currentBasemapLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16 }).addTo(map);
+      } else if (mode === 'esri_sat') {
+        currentBasemapLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16 }).addTo(map);
+      } else {
+        currentBasemapLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16 }).addTo(map);
+      }
+    }
+
+    function updateMapVisuals() {
+      if (!map) return;
+      const selRegion = document.getElementById('filterRegion').value;
+
+      if (regionsGeoLayer && hasGeoJsonPolygons) {
+        regionsGeoLayer.setStyle(feature => getRegionPolygonStyle(feature));
+      }
+
+      if (markersLayer) {
+        markersLayer.clearLayers();
+        REGIONES.forEach(reg => {
+          const { color, count } = getRegionSeverityColor(reg.nombre);
+          const isSelected = selRegion === reg.nombre;
+          const radius = hasGeoJsonPolygons ? (isSelected ? 7 : 4) : (isSelected ? 13 : (count > 0 ? 9 : 6));
+
+          const circle = L.circleMarker([reg.lat, reg.lon], {
+            radius,
+            fillColor: color,
+            color: isSelected ? '#FFFFFF' : '#061E31',
+            weight: isSelected ? 2.5 : 1,
+            opacity: 1,
+            fillOpacity: 0.9
+          });
+          circle.bindTooltip(`<strong>${reg.id} - ${reg.nombre}</strong><br>${count} alerta(s) activa(s)`);
+          circle.on('click', () => {
+            document.getElementById('filterRegion').value = reg.nombre;
+            expandedRegions.add(reg.nombre);
+            onRegionFilterChange();
+          });
+          circle.addTo(markersLayer);
+        });
+      }
+
+      const mapSub = document.getElementById('mapSubtitle');
+      if (selRegion === 'TODAS') {
+        map.setView([-35.6, -71.5], 4);
+        mapSub.textContent = 'Vista Nacional • Haz clic en una región';
+      } else {
+        const found = REGIONES.find(r => r.nombre === selRegion);
+        if (found) {
+          map.setView([found.lat, found.lon], 7);
+          mapSub.textContent = `Viendo: ${found.id} - ${found.nombre}`;
+        }
+      }
+    }
+
+    function updateQuakeMarkers() {
+      if (!quakesLayer) return;
+      quakesLayer.clearLayers();
+      if (!document.getElementById('toggleQuakes').checked) return;
+
+      recentQuakes.forEach(q => {
+        const [lon, lat, depth] = q.geometry.coordinates;
+        const mag = q.properties.mag;
+        const place = q.properties.place;
+        const time = new Date(q.properties.time).toLocaleString('es-CL', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
+
+        const circle = L.circleMarker([lat, lon], {
+          radius: Math.max(5, mag * 2.4),
+          fillColor: '#f28b70',
+          color: '#FFFFFF',
+          weight: 1.5,
+          fillOpacity: 0.35
+        });
+        circle.bindPopup(`
+          <div class="text-xs">
+            <strong class="text-[#E9972C]">Sismo M ${mag.toFixed(1)}</strong><br>
+            <span>Profundidad: ${depth.toFixed(1)} km</span><br>
+            <span>Lugar: ${place}</span><br>
+            <span class="text-[10px] opacity-80">${time}</span>
+          </div>
+        `);
+        circle.addTo(quakesLayer);
+      });
+    }
+
+    function onRegionFilterChange() {
+      const val = document.getElementById('filterRegion').value;
+      if (val !== 'TODAS') expandedRegions.add(val);
+      renderDashboard();
+      updateMapVisuals();
+    }
+
+    function resetMapSelection() {
+      document.getElementById('filterRegion').value = 'TODAS';
+      selectedSeverity = 'TODAS';
+      selectedCommuneFilter = {};
+      document.getElementById('searchAlertInput').value = '';
+      onRegionFilterChange();
+    }
+
+    function saveAlerts() {
+      localStorage.setItem('kamila_alertas_v4', JSON.stringify(alerts));
+    }
+
+    async function fetchLiveAll() {
+      const btn = document.getElementById('btnSyncAll');
+      btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Sincronizando...`;
+      lucide.createIcons();
+
+      try {
+        const lats = REGIONES.map(r => r.lat).join(',');
+        const lons = REGIONES.map(r => r.lon).join(',');
+        const meteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current=temperature_2m,precipitation,wind_speed_10m,wind_gusts_10m&hourly=freezing_level_height&forecast_days=1&timezone=America%2FSantiago`;
+        const resMeteo = await fetch(meteoUrl);
+        const dataMeteo = await resMeteo.json();
+
+        if (Array.isArray(dataMeteo)) {
+          dataMeteo.forEach((item, idx) => {
+            const regName = REGIONES[idx].nombre;
+            const iso0 = item.hourly && item.hourly.freezing_level_height ? Math.round(item.hourly.freezing_level_height[0]) : null;
+            liveMeteoCache[regName] = { ...item.current, iso0 };
+          });
+        }
+
+        const startTime = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+        const usgsUrl = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=${startTime}&minmagnitude=3.0&minlatitude=-56&maxlatitude=-17&minlongitude=-76&maxlongitude=-66`;
+        const resQuake = await fetch(usgsUrl);
+        const dataQuake = await resQuake.json();
+        recentQuakes = dataQuake.features || [];
+
+        btn.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4"></i> Meteo + Sismos OK`;
+        renderDashboard();
+        updateQuakeMarkers();
+      } catch (e) {
+        btn.innerHTML = `<i data-lucide="alert-circle" class="w-4 h-4"></i> Error de red`;
+      }
+      lucide.createIcons();
+    }
+
+    // Símbolos tipográficos universales (BMP) 100% inmunes a corrupción de codificación en WhatsApp Desktop Windows
+    const WA_ICONS = {
+      radar: '\u25C9',   // ◉
+      pin: '\u25B8',     // ▸
+      warn: '\u25B2',    // ▲
+      town: '\u25AA',    // ▪
+      map: '\u25AA',     // ▪
+      note: '\u25AA',    // ▪
+      link: '\u2192',    // →
+      temp: 'Temp:',
+      wind: 'Viento:',
+      rain: 'Precip:',
+      clock: '\u2022'    // •
+    };
+
+    function formatSingleAlertWhatsApp(al) {
+      const regObj = REGIONES.find(r => r.nombre === al.region);
+      const regCode = regObj ? regObj.id : '';
+      const lv = levelMeta[al.level];
+      const ag = agencyMeta[al.agency] || { label: al.agency, officialUrl: '' };
+      const url = al.officialUrl || ag.officialUrl;
+
+      let lines = [
+        `${lv.emoji} *${lv.label} \u2022 ${al.agency}*`,
+        `━━━━━━━━━━━━━━`,
+        `${WA_ICONS.pin} *Regi\u00F3n:* [${regCode}] ${al.region}`,
+        `${WA_ICONS.warn} *Evento:* ${al.event}`
+      ];
+      if (al.comunas && al.comunas.length > 0) {
+        lines.push(`${WA_ICONS.town} *Comunas:* ${al.comunas.join(', ')}`);
+      }
+      lines.push(`${WA_ICONS.map} *Sector:* ${al.sector}`);
+      lines.push('');
+      lines.push(`${WA_ICONS.note} *Detalle t\u00E9cnico:*`);
+      lines.push(`${al.detail}`);
+      lines.push('');
+      lines.push(`${WA_ICONS.link} *Bolet\u00EDn oficial:* ${url}`);
+      lines.push(`_Reporte: Kamila Guerrero (Ge\u00F3loga)_`);
+      return lines.join('\n');
+    }
+
+    function shareSingleWhatsApp(id) {
+      const al = alerts.find(a => a.id === id);
+      if (!al) return;
+      const msg = formatSingleAlertWhatsApp(al);
+      navigator.clipboard.writeText(msg).catch(() => {});
+      showToast('Abriendo WhatsApp (también copiado al portapapeles)');
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+    }
+
+    function copySingleAlert(id) {
+      const al = alerts.find(a => a.id === id);
+      if (!al) return;
+      navigator.clipboard.writeText(formatSingleAlertWhatsApp(al));
+      showToast('Aviso copiado listo para pegar en WhatsApp');
+    }
+
+    function shareRegionWhatsApp(regNombre, event) {
+      if (event) event.stopPropagation();
+      const regObj = REGIONES.find(r => r.nombre === regNombre);
+      const regAlerts = alerts
+        .filter(a => a.region === regNombre)
+        .sort((a, b) => levelMeta[b.level].weight - levelMeta[a.level].weight);
+      if (regAlerts.length === 0) return;
+
+      const now = new Date().toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+      let lines = [
+        `${WA_ICONS.radar} *REPORTE REGIONAL DE ALERTAS*`,
+        `${WA_ICONS.pin} *[${regObj.id}] ${regObj.nombre.toUpperCase()}*`,
+        `${WA_ICONS.clock} _Actualizado: ${now}_`
+      ];
+
+      const meteo = liveMeteoCache[regNombre];
+      if (meteo) {
+        lines.push(`${WA_ICONS.temp} ${meteo.temperature_2m}\u00B0C  |  ${WA_ICONS.wind} ${meteo.wind_speed_10m} km/h  |  ${WA_ICONS.rain} ${meteo.precipitation} mm`);
+      }
+      lines.push('━━━━━━━━━━━━━━\n');
+
+      regAlerts.forEach((al, idx) => {
+        const lv = levelMeta[al.level];
+        lines.push(`${lv.emoji} *${idx + 1}. [${al.agency}] ${al.event}*`);
+        lines.push(`   \u25AA *Nivel:* ${lv.label}`);
+        if (al.comunas && al.comunas.length > 0) {
+          lines.push(`   \u25AA *Comunas:* ${al.comunas.join(', ')}`);
+        }
+        lines.push(`   \u25AA *Sector:* ${al.sector}`);
+        lines.push(`   \u25AA *Detalle:* ${al.detail}\n`);
+      });
+
+      lines.push('━━━━━━━━━━━━━━');
+      lines.push('_Consolidado por Kamila Guerrero \u2022 Ge\u00F3loga_');
+
+      const msg = lines.join('\n');
+      navigator.clipboard.writeText(msg).catch(() => {});
+      showToast('Abriendo WhatsApp (también copiado al portapapeles)');
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+    }
+
+    function shareNationalWhatsApp() {
+      generateReportText('whatsapp');
+      const text = document.getElementById('reportText').value;
+      navigator.clipboard.writeText(text).catch(() => {});
+      showToast('Abriendo WhatsApp (también copiado al portapapeles)');
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    }
+
+    // Calcular nivel más alto de cada comuna dentro de una región
+    function getCommuneStatusMap(regObj, regAlerts) {
+      const statusMap = {};
+      regObj.comunas.forEach(c => {
+        statusMap[c] = { weight: 0, dot: levelMeta.VERDE.dot, label: 'Sin alertas', alerts: [] };
+      });
+
+      regAlerts.forEach(al => {
+        const targetComunas = (al.comunas && al.comunas.length > 0) ? al.comunas : [];
+        targetComunas.forEach(c => {
+          if (statusMap[c]) {
+            statusMap[c].alerts.push(al);
+            if (levelMeta[al.level].weight > statusMap[c].weight) {
+              statusMap[c].weight = levelMeta[al.level].weight;
+              statusMap[c].dot = levelMeta[al.level].dot;
+              statusMap[c].label = levelMeta[al.level].label;
+            }
+          }
+        });
+      });
+      return statusMap;
+    }
+
+    function renderDashboard() {
+      const selRegion = document.getElementById('filterRegion').value;
+      const selAgency = document.getElementById('filterAgency').value;
+      const searchQ = document.getElementById('searchAlertInput').value.toLowerCase().trim();
+
+      const filteredAlerts = alerts.filter(a => {
+        const matchReg = selRegion === 'TODAS' || a.region === selRegion;
+        const matchAg = selAgency === 'TODOS' || a.agency === selAgency;
+        const matchSev = selectedSeverity === 'TODAS' || a.level === selectedSeverity;
+        const comunasText = (a.comunas || []).join(' ');
+        const matchQ = !searchQ || (a.event + ' ' + a.sector + ' ' + a.detail + ' ' + a.region + ' ' + a.agency + ' ' + comunasText).toLowerCase().includes(searchQ);
+        return matchReg && matchAg && matchSev && matchQ;
+      });
+
+      const countAlarma = filteredAlerts.filter(a => a.level === 'ALARMA').length;
+      const countAlerta = filteredAlerts.filter(a => a.level === 'ALERTA').length;
+      const countAviso = filteredAlerts.filter(a => a.level === 'AVISO').length;
+      const comunasEnAlertaSet = new Set();
+      filteredAlerts.forEach(a => (a.comunas || []).forEach(c => comunasEnAlertaSet.add(c)));
+
+      document.getElementById('kpiRow').innerHTML = `
+        <div class="bg-[#0B3F65] border border-[#165685] rounded-xl p-3">
+          <span class="text-[11px] text-[#B8D4E3] block">Comunas en Alerta</span>
+          <strong class="text-xl font-bold text-white">${comunasEnAlertaSet.size} <span class="text-xs font-normal opacity-70">comunas</span></strong>
+        </div>
+        <div class="bg-[#0B3F65] border border-[#B8492C]/60 rounded-xl p-3">
+          <span class="text-[11px] text-[#f28b70] font-semibold block">Rojas / Alarmas</span>
+          <strong class="text-xl font-bold text-[#f28b70]">${countAlarma}</strong>
+        </div>
+        <div class="bg-[#0B3F65] border border-[#E9972C]/60 rounded-xl p-3">
+          <span class="text-[11px] text-[#E9972C] font-semibold block">Amarillas / Alertas</span>
+          <strong class="text-xl font-bold text-[#E9972C]">${countAlerta}</strong>
+        </div>
+        <div class="bg-[#0B3F65] border border-[#3892D0]/60 rounded-xl p-3">
+          <span class="text-[11px] text-[#6BB2C4] font-semibold block">Avisos / ATP</span>
+          <strong class="text-xl font-bold text-[#6BB2C4]">${countAviso}</strong>
+        </div>
+        <div class="bg-[#0B3F65] border border-[#f28b70]/40 rounded-xl p-3 col-span-2 sm:col-span-1">
+          <span class="text-[11px] text-[#f28b70] font-semibold block">Sismos Chile (48h)</span>
+          <strong class="text-xl font-bold text-white">${recentQuakes.length} <span class="text-[10px] font-normal text-[#B8D4E3]">M≥3.0</span></strong>
+        </div>
+      `;
+
+      const container = document.getElementById('regionsContainer');
+      container.innerHTML = '';
+
+      // Mostrar regiones con alertas (o todas si el usuario busca una comuna en específico)
+      const regionsToRender = selRegion === 'TODAS'
+        ? REGIONES.filter(r => {
+            const hasAlert = filteredAlerts.some(a => a.region === r.nombre);
+            const matchesCommuneSearch = searchQ && r.comunas.some(c => c.toLowerCase().includes(searchQ));
+            return hasAlert || matchesCommuneSearch;
+          })
+        : REGIONES.filter(r => r.nombre === selRegion);
+
+      if (regionsToRender.length === 0) {
+        container.innerHTML = `<div class="bg-[#0B3F65] border border-[#165685] rounded-2xl p-8 text-center text-sm text-[#B8D4E3]">No hay alertas registradas para los filtros seleccionados.</div>`;
+        updateMapVisuals();
+        return;
+      }
+
+      regionsToRender.forEach(reg => {
+        const regAlertsAll = filteredAlerts
+          .filter(a => a.region === reg.nombre)
+          .sort((a, b) => levelMeta[b.level].weight - levelMeta[a.level].weight);
+
+        const activeComuna = selectedCommuneFilter[reg.nombre];
+        const regAlertsVisible = activeComuna
+          ? regAlertsAll.filter(a => (a.comunas || []).includes(activeComuna))
+          : regAlertsAll;
+
+        const isExpanded = expandedRegions.has(reg.nombre) || selRegion !== 'TODAS' || Boolean(searchQ);
+        const communeStatusMap = getCommuneStatusMap(reg, regAlertsAll);
+        const comunasConAlertaCount = Object.values(communeStatusMap).filter(s => s.weight > 0).length;
+
+        const meteo = liveMeteoCache[reg.nombre];
+        const meteoBadge = meteo
+          ? `<div class="hidden sm:flex items-center gap-2 text-[11px] bg-[#061E31] px-2.5 py-1 rounded-lg border border-[#165685] text-[#6BB2C4]">
+               <span>🌡️ ${meteo.temperature_2m}°C</span>
+               <span>💨 ${meteo.wind_speed_10m} km/h</span>
+               <span>🌧️ ${meteo.precipitation} mm</span>
+             </div>`
+          : '';
+
+        // Matriz de píldoras de comunas (igual que en la imagen de referencia: punto de color + nombre de comuna)
+        const communesPillsHTML = reg.comunas.map(c => {
+          const st = communeStatusMap[c];
+          const isSelectedC = activeComuna === c;
+          const matchesSearch = searchQ && c.toLowerCase().includes(searchQ);
+          return `
+            <button onclick="toggleCommuneFilter('${reg.nombre}', '${c}')"
+              title="${c}: ${st.label} (${st.alerts.length} aviso/s) • Clic para filtrar"
+              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition
+              ${isSelectedC ? 'bg-[#3892D0] text-white ring-2 ring-white font-bold' : (matchesSearch ? 'bg-[#E9972C]/30 text-white border border-[#E9972C]' : 'bg-[#061E31] hover:bg-[#165685]/70 text-gray-100 border border-[#165685]')}">
+              <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${st.dot}"></span>
+              <span>${c}</span>
+            </button>
+          `;
+        }).join('');
+
+        // Tarjetas de alertas de la región
+        const cardsHTML = regAlertsVisible.length > 0
+          ? regAlertsVisible.map(al => {
+              const ag = agencyMeta[al.agency] || { label: al.agency, color: '#6BB2C4', icon: 'info', officialUrl: '#' };
+              const lv = levelMeta[al.level];
+              const comunasBadges = (al.comunas && al.comunas.length > 0)
+                ? `<div class="flex flex-wrap gap-1 mt-1.5">
+                     ${al.comunas.map(c => `<span class="px-2 py-0.5 rounded bg-[#0B3F65] text-[#B8D4E3] text-[10px] border border-[#165685]">${c}</span>`).join('')}
+                   </div>`
+                : '';
+
+              return `
+                <div class="p-4 bg-[#061E31]/65 hover:bg-[#061E31] border-t border-[#165685]/60 transition flex flex-col gap-2.5" style="border-left: 4px solid ${lv.bg};">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div class="flex items-center gap-2 flex-wrap">
+                      <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-bold" style="background:${ag.color}25; color:${ag.color}; border:1px solid ${ag.color}60">
+                        <i data-lucide="${ag.icon}" class="w-3.5 h-3.5"></i> ${ag.label}
+                      </span>
+                      <span class="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider" style="background:${lv.bg}; color:${lv.text}">
+                        ${lv.label}
+                      </span>
+                    </div>
+                    <span class="text-[11px] text-[#B8D4E3] font-mono">${al.updated}</span>
+                  </div>
+
+                  <div>
+                    <h3 class="font-bold text-sm sm:text-base text-white">${al.event}</h3>
+                    <div class="text-xs text-[#6BB2C4] font-medium mt-0.5">📍 ${al.sector}</div>
+                    <p class="text-xs text-[#E2EEF5] mt-1.5 leading-relaxed">${al.detail}</p>
+                    ${comunasBadges}
+                  </div>
+
+                  <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#165685]/40">
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <button onclick="shareSingleWhatsApp('${al.id}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#25D366]/20 hover:bg-[#25D366] text-[#25D366] hover:text-[#061E31] border border-[#25D366]/50 text-[11px] font-bold transition">
+                        <i data-lucide="share-2" class="w-3.5 h-3.5"></i> WhatsApp
+                      </button>
+                      <button onclick="copySingleAlert('${al.id}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0B3F65] hover:bg-[#3892D0] text-white border border-[#165685] text-[11px] font-medium transition">
+                        <i data-lucide="copy" class="w-3.5 h-3.5"></i> Copiar
+                      </button>
+                      <a href="${al.officialUrl || ag.officialUrl}" target="_blank" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0B3F65] hover:bg-white/10 text-[#6BB2C4] border border-[#165685] text-[11px] transition">
+                        <i data-lucide="external-link" class="w-3.5 h-3.5"></i> Boletín ${al.agency}
+                      </a>
+                    </div>
+                    <div class="flex items-center gap-3 text-[11px]">
+                      <button onclick="editAlert('${al.id}')" class="text-[#6BB2C4] hover:underline">Editar</button>
+                      <button onclick="deleteAlert('${al.id}')" class="text-[#f28b70] hover:underline">Quitar</button>
+                    </div>
+                  </div>
+                </div>
+              `;
+            }).join('')
+          : `<div class="p-6 text-xs text-[#B8D4E3] text-center">No hay alertas activas para ${activeComuna || 'esta selección'}.</div>`;
+
+        const section = document.createElement('div');
+        section.className = 'bg-[#0B3F65] border border-[#165685] rounded-2xl overflow-hidden shadow-lg';
+        section.innerHTML = `
+          <!-- Cabecera Clicable de la Región para desplegar comunas -->
+          <div onclick="toggleRegionExpand('${reg.nombre}')" class="bg-[#061E31]/85 hover:bg-[#061E31] px-4 py-3.5 border-b border-[#165685] flex flex-col sm:flex-row sm:items-center justify-between gap-2 cursor-pointer select-none transition">
+            <div class="flex items-center gap-2.5 flex-wrap">
+              <i data-lucide="${isExpanded ? 'chevron-down' : 'chevron-right'}" class="w-4 h-4 text-[#6BB2C4]"></i>
+              <span class="px-2 py-0.5 rounded bg-[#3892D0] text-white font-mono text-xs font-bold">${reg.id}</span>
+              <h2 class="font-bold text-sm sm:text-base text-white">${reg.nombre}</h2>
+              <span class="text-xs px-2 py-0.5 rounded-full bg-[#0B3F65] text-[#6BB2C4] border border-[#165685]">
+                ${comunasConAlertaCount} / ${reg.comunas.length} comunas en alerta
+              </span>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              ${meteoBadge}
+              ${regAlertsAll.length > 0 ? `
+                <button onclick="shareRegionWhatsApp('${reg.nombre}', event)" title="Compartir alertas de la región por WhatsApp"
+                  class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#25D366] hover:bg-[#1ebe5d] text-[#061E31] text-[11px] font-extrabold transition">
+                  <i data-lucide="share-2" class="w-3 h-3"></i> Región WA
+                </button>
+              ` : ''}
+            </div>
+          </div>
+
+          <!-- Panel Desplegable de Comunas + Alertas -->
+          <div class="${isExpanded ? 'block' : 'hidden'}">
+            <!-- Sub-panel de Comunas (estilo Pudumaps) -->
+            <div class="p-4 bg-[#041524]/75 border-b border-[#165685]">
+              <div class="flex flex-wrap justify-between items-center gap-2 mb-2.5">
+                <span class="text-[11px] uppercase tracking-wider font-bold text-[#6BB2C4]">
+                  Comunas de ${reg.nombre} (${reg.comunas.length}) • <span class="font-normal text-[#B8D4E3]">Haz clic en una comuna para filtrar</span>
+                </span>
+                ${activeComuna ? `
+                  <button onclick="toggleCommuneFilter('${reg.nombre}', '${activeComuna}')" class="text-[11px] text-[#E9972C] font-semibold hover:underline">
+                    ✕ Quitar filtro (${activeComuna})
+                  </button>
+                ` : ''}
+              </div>
+              <div class="flex flex-wrap gap-1.5">
+                ${communesPillsHTML}
+              </div>
+            </div>
+
+            <!-- Lista de Alertas de la Región (o de la comuna filtrada) -->
+            <div>
+              ${cardsHTML}
+            </div>
+          </div>
+        `;
+        container.appendChild(section);
+      });
+
+      updateMapVisuals();
+      lucide.createIcons();
+    }
+
+    function applyTemplate(type) {
+      const templates = {
+        marejadas: {
+          agency: 'ARMADA', level: 'AVISO',
+          event: 'Marejadas Anormales',
+          sector: 'Borde costero y bahías abiertas',
+          detail: 'Oleaje del suroeste generando fuerte rompiente y sobrepasos en pleamar. Precaución en labores costeras.'
+        },
+        viento: {
+          agency: 'DMC', level: 'AVISO',
+          event: 'Viento Normal a Moderado en Cordillera',
+          sector: 'Cordillera y Precordillera',
+          detail: 'Rachas de viento entre 50 y 70 km/h con probabilidad de viento blanco en alta montaña.'
+        },
+        atp: {
+          agency: 'SENAPRED', level: 'AVISO',
+          event: 'Alerta Temprana Preventiva (ATP)',
+          sector: 'Comunas precordilleranas y cordilleranas',
+          detail: 'Reforzamiento del monitoreo técnico ante evento meteorológico y potencial activación de quebradas.'
+        },
+        volcan: {
+          agency: 'SERNAGEOMIN', level: 'ALERTA',
+          event: 'Alerta Técnica Amarilla Volcánica',
+          sector: 'Zona proximal del edificio volcánico (radio de exclusión vigente)',
+          detail: 'Incremento en parámetros de sismicidad volcano-tectónica y desgasificación superficial (OVDAS).'
+        },
+        remocion: {
+          agency: 'SERNAGEOMIN', level: 'ALERTA',
+          event: 'Posibilidad Moderada a Alta de Remociones en Masa',
+          sector: 'Precordillera, valles transversales y laderas de alta pendiente',
+          detail: 'Saturación de suelos por precipitaciones intensas con isoterma 0°C elevada. Riesgo de flujos de detritos.'
+        }
+      };
+      const t = templates[type];
+      if (!t) return;
+      document.getElementById('inAgency').value = t.agency;
+      document.getElementById('inLevel').value = t.level;
+      document.getElementById('inEvent').value = t.event;
+      document.getElementById('inSector').value = t.sector;
+      document.getElementById('inDetail').value = t.detail;
+    }
+
+    function openAddAlertModal() {
+      document.getElementById('editAlertId').value = '';
+      document.getElementById('inUrl').value = '';
+      populateModalCommunes([]);
+      document.getElementById('modalFormTitle').innerHTML = `<i data-lucide="bell-plus" class="w-5 h-5 text-[#E9972C]"></i> Ingresar Alerta / Aviso Oficial`;
+      document.getElementById('addAlertModal').classList.remove('hidden');
+      document.getElementById('addAlertModal').classList.add('flex');
+      lucide.createIcons();
+    }
+
+    function editAlert(id) {
+      const al = alerts.find(a => a.id === id);
+      if (!al) return;
+      document.getElementById('editAlertId').value = al.id;
+      document.getElementById('inRegion').value = al.region;
+      populateModalCommunes(al.comunas || []);
+      document.getElementById('inAgency').value = al.agency;
+      document.getElementById('inLevel').value = al.level;
+      document.getElementById('inEvent').value = al.event;
+      document.getElementById('inSector').value = al.sector;
+      document.getElementById('inDetail').value = al.detail;
+      document.getElementById('inUrl').value = al.officialUrl || '';
+      document.getElementById('modalFormTitle').innerHTML = `<i data-lucide="edit-3" class="w-5 h-5 text-[#6BB2C4]"></i> Editar Alerta Oficial`;
+      document.getElementById('addAlertModal').classList.remove('hidden');
+      document.getElementById('addAlertModal').classList.add('flex');
+      lucide.createIcons();
+    }
+
+    function closeAddAlertModal() {
+      document.getElementById('addAlertModal').classList.add('hidden');
+      document.getElementById('addAlertModal').classList.remove('flex');
+    }
+
+    function saveNewAlert(e) {
+      e.preventDefault();
+      const editId = document.getElementById('editAlertId').value;
+      const selectedComunas = Array.from(document.querySelectorAll('input[name="modalComuna"]:checked')).map(cb => cb.value);
+      const regName = document.getElementById('inRegion').value;
+      const level = document.getElementById('inLevel').value;
+      const eventName = document.getElementById('inEvent').value;
+      const agency = document.getElementById('inAgency').value;
+
+      const payload = {
+        id: editId || ('al_' + Date.now()),
+        region: regName,
+        agency: agency,
+        level: level,
+        event: eventName,
+        comunas: selectedComunas,
+        sector: document.getElementById('inSector').value,
+        detail: document.getElementById('inDetail').value,
+        officialUrl: document.getElementById('inUrl').value.trim(),
+        updated: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }) + ' hrs'
+      };
+
+      if (editId) {
+        const idx = alerts.findIndex(a => a.id === editId);
+        if (idx !== -1) alerts[idx] = payload;
+        addLogEntry(
+          `Actualiza [${agency}] ${eventName} • ${selectedComunas.length} comunas`,
+          `${regName}: ${selectedComunas.length > 0 ? selectedComunas.join(', ') : payload.sector}`,
+          level
+        );
+      } else {
+        alerts.unshift(payload);
+        addLogEntry(
+          `Nueva ${levelMeta[level].label} [${agency}] • ${selectedComunas.length} comunas`,
+          `${regName}: ${selectedComunas.length > 0 ? selectedComunas.join(', ') : payload.sector}`,
+          level
+        );
+      }
+
+      expandedRegions.add(regName);
+      saveAlerts();
+      renderDashboard();
+      e.target.reset();
+      closeAddAlertModal();
+      showToast('Alerta y comunas actualizadas');
+    }
+
+    function deleteAlert(id) {
+      const al = alerts.find(a => a.id === id);
+      if (al) {
+        addLogEntry(
+          `Se levanta [${al.agency}] ${al.event}`,
+          `${al.region}${al.comunas && al.comunas.length ? ': ' + al.comunas.join(', ') : ''}`,
+          'VERDE'
+        );
+      }
+      alerts = alerts.filter(a => a.id !== id);
+      saveAlerts();
+      renderDashboard();
+    }
+
+    function exportCSV() {
+      const headers = ['ID_Region', 'Region', 'Comunas', 'Organismo', 'Nivel', 'Fenomeno', 'Sector', 'Detalle', 'Actualizacion'];
+      const rows = alerts.map(a => {
+        const regObj = REGIONES.find(r => r.nombre === a.region);
+        return [
+          regObj ? regObj.id : '',
+          `"${a.region}"`,
+          `"${(a.comunas || []).join('; ')}"`,
+          `"${a.agency}"`,
+          `"${levelMeta[a.level].label}"`,
+          `"${a.event.replace(/"/g, '""')}"`,
+          `"${a.sector.replace(/"/g, '""')}"`,
+          `"${a.detail.replace(/"/g, '""')}"`,
+          `"${a.updated}"`
+        ].join(',');
+      });
+
+      const csvContent = '\uFEFF' + [headers.join(','), ...rows].join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `Alertas_Regiones_Comunas_${new Date().toISOString().slice(0,10)}.csv`;
+      link.click();
+    }
+
+    function openReportModal() {
+      generateReportText('whatsapp');
+      document.getElementById('reportModal').classList.remove('hidden');
+      document.getElementById('reportModal').classList.add('flex');
+    }
+
+    function generateReportText(mode) {
+      const btnStd = document.getElementById('btnFmtStd');
+      const btnWa = document.getElementById('btnFmtWa');
+      if (mode === 'whatsapp') {
+        btnWa.className = 'px-3 py-1 rounded-lg bg-[#3892D0] text-white text-xs font-semibold';
+        btnStd.className = 'px-3 py-1 rounded-lg bg-[#061E31] text-[#B8D4E3] text-xs font-semibold border border-[#165685]';
+      } else {
+        btnStd.className = 'px-3 py-1 rounded-lg bg-[#3892D0] text-white text-xs font-semibold';
+        btnWa.className = 'px-3 py-1 rounded-lg bg-[#061E31] text-[#B8D4E3] text-xs font-semibold border border-[#165685]';
+      }
+
+      const now = new Date().toLocaleString('es-CL');
+      let lines = [];
+
+      if (mode === 'whatsapp') {
+        lines.push(`${WA_ICONS.radar} *BOLET\u00CDN NACIONAL DE ALERTAS POR REGI\u00D3N*`);
+        lines.push(`${WA_ICONS.clock} _Emisi\u00F3n: ${now}_`);
+        lines.push(`_Fuentes: DMC \u2022 Armada \u2022 SENAPRED \u2022 SERNAGEOMIN \u2022 CONAF \u2022 SHOA_`);
+        lines.push('━━━━━━━━━━━━━━\n');
+
+        REGIONES.forEach(reg => {
+          const regAlerts = alerts
+            .filter(a => a.region === reg.nombre)
+            .sort((a, b) => levelMeta[b.level].weight - levelMeta[a.level].weight);
+
+          if (regAlerts.length > 0) {
+            lines.push(`${WA_ICONS.pin} *[${reg.id}] ${reg.nombre.toUpperCase()}*`);
+            const meteo = liveMeteoCache[reg.nombre];
+            if (meteo) {
+              lines.push(`   ${WA_ICONS.temp} ${meteo.temperature_2m}\u00B0C | ${WA_ICONS.wind} ${meteo.wind_speed_10m} km/h | ${WA_ICONS.rain} ${meteo.precipitation} mm`);
+            }
+            lines.push('');
+            regAlerts.forEach(al => {
+              const lv = levelMeta[al.level];
+              lines.push(`   ${lv.emoji} *[${al.agency}] ${al.event}*`);
+              lines.push(`      \u25AA *Nivel:* ${lv.label}`);
+              if (al.comunas && al.comunas.length > 0) {
+                lines.push(`      \u25AA *Comunas:* ${al.comunas.join(', ')}`);
+              }
+              lines.push(`      \u25AA *Sector:* ${al.sector}`);
+              lines.push(`      \u25AA *Detalle:* ${al.detail}\n`);
+            });
+            lines.push('──────────────\n');
+          }
+        });
+        lines.push('_Consolidado por Kamila Guerrero \u2022 Ge\u00F3loga_');
+      } else {
+        lines.push('====================================================================');
+        lines.push('BOLETÍN CONSOLIDADO DE ALERTAS MULTI-ORGANISMO POR REGIÓN Y COMUNA');
+        lines.push(`Responsable: Kamila Guerrero (Geóloga) | Emisión: ${now}`);
+        lines.push('Fuentes: DMC • Armada/DIRECTEMAR • SENAPRED • SERNAGEOMIN • CONAF • SHOA');
+        lines.push('====================================================================\n');
+
+        REGIONES.forEach(reg => {
+          const regAlerts = alerts
+            .filter(a => a.region === reg.nombre)
+            .sort((a, b) => levelMeta[b.level].weight - levelMeta[a.level].weight);
+
+          if (regAlerts.length > 0) {
+            lines.push(`▶ [${reg.id}] ${reg.nombre.toUpperCase()}`);
+            const meteo = liveMeteoCache[reg.nombre];
+            if (meteo) {
+              lines.push(`   Condición Actual: Temp ${meteo.temperature_2m}°C | Viento ${meteo.wind_speed_10m} km/h | Precip ${meteo.precipitation} mm`);
+            }
+            regAlerts.forEach(al => {
+              lines.push(`   • [${al.agency}] [${levelMeta[al.level].label}] ${al.event}`);
+              if (al.comunas && al.comunas.length > 0) {
+                lines.push(`     - Comunas: ${al.comunas.join(', ')}`);
+              }
+              lines.push(`     - Cobertura: ${al.sector}`);
+              lines.push(`     - Detalle: ${al.detail}`);
+            });
+            lines.push('');
+          }
+        });
+      }
+
+      if (alerts.length === 0) lines.push('Sin alertas activas registradas a la fecha.');
+      document.getElementById('reportText').value = lines.join('\n');
+    }
+
+    function sendReportDirectWhatsApp() {
+      const text = document.getElementById('reportText').value;
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+    }
+
+    function closeReportModal() {
+      document.getElementById('reportModal').classList.add('hidden');
+      document.getElementById('reportModal').classList.remove('flex');
+    }
+    function copyReport() {
+      const txt = document.getElementById('reportText');
+      txt.select();
+      navigator.clipboard.writeText(txt.value);
+      showToast('Boletín copiado al portapapeles');
+    }
+    function downloadReport() {
+      const content = document.getElementById('reportText').value;
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `Consolidado_Alertas_Regiones_Comunas_${new Date().toISOString().slice(0,10)}.txt`;
+      a.click();
+    }
+
+    function updateClock() {
+      document.getElementById('liveClock').textContent = new Date().toLocaleString('es-CL');
+    }
+
+    initSelectors();
+    initMap();
+    updateClock();
+    setInterval(updateClock, 1000);
+    renderChangelog();
+    renderDashboard();
+    fetchLiveAll();
+  </script>
+</body>
+</html>

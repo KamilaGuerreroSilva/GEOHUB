@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Columna Estratigráfica Rápida</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#061E31] text-white min-h-screen p-6">
+  <div class="max-w-3xl mx-auto bg-[#0B3F65] border border-[#165685] rounded-2xl p-6 shadow-xl">
+    <span class="px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-full bg-[#647855]/30 text-[#a3bd8f] border border-[#647855]">Geografía y Estratigrafía</span>
+    <h1 class="text-xl font-bold text-[#a3bd8f] mt-2 mb-1">Generador de Columna Estratigráfica</h1>
+    <p class="text-xs text-[#B8D4E3] mb-5">Añade estratos de base a techo para visualizar tu perfil litológico</p>
+
+    <form onsubmit="addEstrato(event)" class="grid grid-cols-1 sm:grid-cols-4 gap-3 text-sm mb-6">
+      <input required id="litNombre" placeholder="Litología (Ej: Arenisca)" class="sm:col-span-2 p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none" />
+      <input required id="litEspesor" type="number" min="1" max="20" value="4" placeholder="Espesor (m)" class="p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none" />
+      <select id="litColor" class="p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none">
+        <option value="#E9972C">Arenisca / Minería (#E9972C)</option>
+        <option value="#68817C">Lutita / Limolita (#68817C)</option>
+        <option value="#6BB2C4">Caliza (#6BB2C4)</option>
+        <option value="#B8492C">Conglomerado (#B8492C)</option>
+        <option value="#647855">Unidad Volcánica (#647855)</option>
+      </select>
+      <button type="submit" class="sm:col-span-4 py-2 rounded-lg bg-[#647855] hover:bg-[#536446] text-white font-semibold">Añadir Estrato (Hacia Techo)</button>
+    </form>
+
+    <div id="columna" class="flex flex-col-reverse border-l-4 border-[#6BB2C4] pl-4 space-y-reverse space-y-1"></div>
+  </div>
+  <script>
+    let estratos = [
+      { nombre: 'Conglomerado basal polimíctico', esp: 3, color: '#B8492C' },
+      { nombre: 'Arenisca cuarzosa de grano medio', esp: 5, color: '#E9972C' },
+      { nombre: 'Lutita negra laminada', esp: 4, color: '#68817C' }
+    ];
+    function render() {
+      const cont = document.getElementById('columna');
+      cont.innerHTML = estratos.map(e => `
+        <div style="height:${e.esp * 14}px; background:${e.color}38; border-color:${e.color}"
+             class="border-2 rounded-r-lg px-4 flex items-center justify-between text-xs font-semibold">
+          <span>${e.nombre}</span>
+          <span>${e.esp} m</span>
+        </div>
+      `).join('');
+    }
+    function addEstrato(ev) {
+      ev.preventDefault();
+      estratos.push({
+        nombre: document.getElementById('litNombre').value,
+        esp: parseInt(document.getElementById('litEspesor').value) || 2,
+        color: document.getElementById('litColor').value
+      });
+      ev.target.reset();
+      render();
+    }
+    render();
+  </script>
+</body>
+</html>

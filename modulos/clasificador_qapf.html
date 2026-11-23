@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Clasificador Petrográfico QAPF</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#061E31] text-white min-h-screen p-6 flex items-center justify-center">
+  <div class="bg-[#0B3F65] border border-[#165685] rounded-2xl p-6 max-w-md w-full shadow-xl">
+    <span class="px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-full bg-[#6BB2C4]/25 text-[#6BB2C4] border border-[#6BB2C4]/50">Petrología</span>
+    <h1 class="text-xl font-bold text-[#6BB2C4] mt-2 mb-1">Normalizador QAP (Rocas Ígneas)</h1>
+    <p class="text-xs text-[#B8D4E3] mb-5">Ingresa los porcentajes modales estimados en muestra de mano o corte transparente</p>
+
+    <div class="space-y-3 text-sm">
+      <div>
+        <label class="block text-[#B8D4E3] mb-1">Cuarzo (Q) %</label>
+        <input id="q" type="number" value="25" oninput="norm()" class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none" />
+      </div>
+      <div>
+        <label class="block text-[#B8D4E3] mb-1">Feldespato Alcalino (A) %</label>
+        <input id="a" type="number" value="35" oninput="norm()" class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none" />
+      </div>
+      <div>
+        <label class="block text-[#B8D4E3] mb-1">Plagioclasa (P) %</label>
+        <input id="p" type="number" value="25" oninput="norm()" class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none" />
+      </div>
+
+      <div class="bg-[#061E31] border border-[#6BB2C4]/40 rounded-xl p-4 mt-4 space-y-2">
+        <div class="flex justify-between"><span>Q Normalizado:</span><strong id="nq" class="text-[#6BB2C4]">29.4%</strong></div>
+        <div class="flex justify-between"><span>A Normalizado:</span><strong id="na" class="text-[#6BB2C4]">41.2%</strong></div>
+        <div class="flex justify-between"><span>P Normalizado:</span><strong id="np" class="text-[#6BB2C4]">29.4%</strong></div>
+        <div class="pt-2 border-t border-[#165685] text-center">
+          <span class="text-xs text-[#B8D4E3] block">Clasificación Plutónica / Volcánica:</span>
+          <strong id="roca" class="text-base text-[#E9972C]">Granito / Riolita</strong>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    function norm() {
+      const q = parseFloat(document.getElementById('q').value) || 0;
+      const a = parseFloat(document.getElementById('a').value) || 0;
+      const p = parseFloat(document.getElementById('p').value) || 0;
+      const sum = q + a + p || 1;
+      const nq = (q / sum) * 100;
+      const na = (a / sum) * 100;
+      const np = (p / sum) * 100;
+
+      document.getElementById('nq').textContent = nq.toFixed(1) + '%';
+      document.getElementById('na').textContent = na.toFixed(1) + '%';
+      document.getElementById('np').textContent = np.toFixed(1) + '%';
+
+      const ratioP = (np / (na + np || 1)) * 100;
+      let nombre = 'Por clasificar';
+      if (nq >= 60) nombre = 'Cuarzolita';
+      else if (nq >= 20) {
+        if (ratioP < 10) nombre = 'Granito de Feldespato Alcalino / Riolita Alcalina';
+        else if (ratioP < 65) nombre = 'Granito (Sienogranito / Monzogranito) / Riolita';
+        else if (ratioP < 90) nombre = 'Granodiorita / Dacita';
+        else nombre = 'Tonalita / Dacita';
+      } else if (nq >= 5) {
+        if (ratioP < 10) nombre = 'Sienita de Feldespato Alcalino Cuarzosa';
+        else if (ratioP < 35) nombre = 'Sienita Cuarzosa / Traquita Cuarzosa';
+        else if (ratioP < 65) nombre = 'Monzonita Cuarzosa / Latita Cuarzosa';
+        else if (ratioP < 90) nombre = 'Monzodiorita Cuarzosa / Andesita Cuarzosa';
+        else nombre = 'Diorita / Gabro Cuarzoso';
+      } else {
+        if (ratioP < 35) nombre = 'Sienita / Traquita';
+        else if (ratioP < 65) nombre = 'Monzonita / Latita';
+        else nombre = 'Diorita - Gabro / Andesita - Basalto';
+      }
+      document.getElementById('roca').textContent = nombre;
+    }
+    norm();
+  </script>
+</body>
+</html>

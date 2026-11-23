@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calculadora de Rumbo y Buzamiento</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#061E31] text-white min-h-screen p-6 flex items-center justify-center">
+  <div class="bg-[#0B3F65] border border-[#165685] rounded-2xl p-6 max-w-lg w-full shadow-xl">
+    <span class="px-2.5 py-0.5 text-[10px] font-bold uppercase rounded-full bg-[#3892D0]/25 text-[#6BB2C4] border border-[#3892D0]/50">Geología</span>
+    <h1 class="text-xl font-bold text-[#6BB2C4] mt-2 mb-1">Calculadora de Rumbo y Buzamiento</h1>
+    <p class="text-xs text-[#B8D4E3] mb-6">Conversión entre Notación Cuadrante, Azimutal (RHR) y Dirección de Buzamiento</p>
+
+    <div class="space-y-4 text-sm">
+      <div>
+        <label class="block text-[#B8D4E3] mb-1">Rumbo Azimutal (0° - 360°)</label>
+        <input id="strike" type="number" min="0" max="360" value="45" oninput="calcular()"
+          class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] focus:border-[#3892D0] outline-none" />
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-[#B8D4E3] mb-1">Manteo / Buzamiento (0° - 90°)</label>
+          <input id="dip" type="number" min="0" max="90" value="30" oninput="calcular()"
+            class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] focus:border-[#3892D0] outline-none" />
+        </div>
+        <div>
+          <label class="block text-[#B8D4E3] mb-1">Cuadrante hacia donde buza</label>
+          <select id="quad" onchange="calcular()" class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none">
+            <option value="SE">SE (Sureste)</option>
+            <option value="NW">NW (Noroeste)</option>
+            <option value="NE">NE (Noreste)</option>
+            <option value="SW">SW (Suroeste)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="bg-[#061E31] border border-[#3892D0]/50 rounded-xl p-4 mt-4 space-y-2">
+        <div class="flex justify-between">
+          <span class="text-[#B8D4E3]">Notación Cuadrante:</span>
+          <span id="resQuad" class="font-mono font-bold text-[#3892D0]">N45°E / 30°SE</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-[#B8D4E3]">Regla Mano Derecha (RHR):</span>
+          <span id="resRHR" class="font-mono font-bold text-[#6BB2C4]">045° / 30°</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-[#B8D4E3]">Dip Direction / Dip:</span>
+          <span id="resDipDir" class="font-mono font-bold text-[#E9972C]">135° / 30°</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function calcular() {
+      let s = parseFloat(document.getElementById('strike').value) || 0;
+      let d = parseFloat(document.getElementById('dip').value) || 0;
+      let q = document.getElementById('quad').value;
+
+      s = ((s % 360) + 360) % 360;
+      let sNorm = s % 180;
+      let quadStrike = sNorm <= 90 ? `N${sNorm}°E` : `N${180 - sNorm}°W`;
+      if (sNorm === 0) quadStrike = 'N-S';
+      if (sNorm === 90) quadStrike = 'E-W';
+
+      let dipDir = (s + 90) % 360;
+      if ((q === 'NW' || q === 'SW') && dipDir < 180) dipDir = (dipDir + 180) % 360;
+      if ((q === 'NE' || q === 'SE') && dipDir >= 180) dipDir = (dipDir + 180) % 360;
+
+      let rhrStrike = (dipDir - 90 + 360) % 360;
+
+      document.getElementById('resQuad').textContent = `${quadStrike} / ${d}°${q}`;
+      document.getElementById('resRHR').textContent = `${String(Math.round(rhrStrike)).padStart(3, '0')}° / ${d}°`;
+      document.getElementById('resDipDir').textContent = `${String(Math.round(dipDir)).padStart(3, '0')}° / ${d}°`;
+    }
+    calcular();
+  </script>
+</body>
+</html>

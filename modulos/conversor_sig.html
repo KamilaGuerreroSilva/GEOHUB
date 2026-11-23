@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Conversor Geodésico Universal | Kamila Guerrero</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Proj4js para transformaciones geodésicas precisas entre datums -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
+  <!-- MGRS library -->
+  <script src="https://unpkg.com/mgrs@1.0.0/dist/mgrs.js"></script>
+</head>
+<body class="bg-[#061E31] text-white min-h-screen p-4 md:p-6">
+  <div class="max-w-4xl mx-auto bg-[#0B3F65] border border-[#165685] rounded-2xl p-6 shadow-2xl">
+    <!-- Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#165685]">
+      <div>
+        <span class="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full bg-[#B8492C]/30 text-[#f28b70] border border-[#B8492C]">
+          SIG y Teledetección • Geodesia
+        </span>
+        <h1 class="text-xl font-bold text-white mt-1.5 flex items-center gap-2">
+          <i data-lucide="globe-2" class="w-5 h-5 text-[#6BB2C4]"></i> Conversor Universal de Coordenadas
+        </h1>
+        <p class="text-xs text-[#B8D4E3]">Convierte simultáneamente entre DD, DMS, DDM, UTM, Web Mercator y MGRS con soporte de Datums</p>
+      </div>
+
+      <!-- Selector de Datum -->
+      <div class="bg-[#061E31] p-2.5 rounded-xl border border-[#165685]">
+        <label class="block text-[10px] uppercase tracking-wider text-[#6BB2C4] font-bold mb-1">Datum Geodésico</label>
+        <select id="datumSelect" onchange="recalculateFromActive()" class="bg-transparent text-xs font-semibold text-white outline-none cursor-pointer">
+          <option value="WGS84" class="bg-[#061E31]">WGS84 / SIRGAS (EPSG:4326)</option>
+          <option value="PSAD56" class="bg-[#061E31]">PSAD56 (Sudamérica 1956)</option>
+          <option value="SAD69" class="bg-[#061E31]">SAD69 (Sudamérica 1969)</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Pestañas de Entrada -->
+    <div class="mt-5">
+      <label class="block text-xs text-[#B8D4E3] mb-2 font-semibold">1. Selecciona el formato de entrada:</label>
+      <div class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-xs font-semibold">
+        <button onclick="switchTab('dd')" id="tab-dd" class="tab-btn py-2 px-3 rounded-lg bg-[#3892D0] text-white transition">Grados Decimales (DD)</button>
+        <button onclick="switchTab('dms')" id="tab-dms" class="tab-btn py-2 px-3 rounded-lg bg-[#061E31] text-[#B8D4E3] hover:text-white border border-[#165685] transition">G° M' S" (DMS)</button>
+        <button onclick="switchTab('ddm')" id="tab-ddm" class="tab-btn py-2 px-3 rounded-lg bg-[#061E31] text-[#B8D4E3] hover:text-white border border-[#165685] transition">G° M.m' (DDM)</button>
+        <button onclick="switchTab('utm')" id="tab-utm" class="tab-btn py-2 px-3 rounded-lg bg-[#061E31] text-[#B8D4E3] hover:text-white border border-[#165685] transition">UTM (Este / Norte)</button>
+        <button onclick="switchTab('mgrs')" id="tab-mgrs" class="tab-btn py-2 px-3 rounded-lg bg-[#061E31] text-[#B8D4E3] hover:text-white border border-[#165685] transition">MGRS (Militar/OTAN)</button>
+      </div>
+    </div>
+
+    <!-- FORMULARIOS DE ENTRADA -->
+    <div class="mt-4 bg-[#061E31] border border-[#165685] rounded-xl p-4">
+      
+      <!-- Entrada DD -->
+      <div id="input-dd" class="input-panel grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+        <div>
+          <label class="block text-xs text-[#B8D4E3] mb-1">Latitud Decimal (-90° a 90°)</label>
+          <input id="in-dd-lat" type="number" step="any" value="-33.047238" oninput="fromDD()" class="w-full p-2.5 rounded-lg bg-[#0B3F65]/50 border border-[#165685] focus:border-[#3892D0] outline-none font-mono" />
+        </div>
+        <div>
+          <label class="block text-xs text-[#B8D4E3] mb-1">Longitud Decimal (-180° a 180°)</label>
+          <input id="in-dd-lon" type="number" step="any" value="-71.612688" oninput="fromDD()" class="w-full p-2.5 rounded-lg bg-[#0B3F65]/50 border border-[#165685] focus:border-[#3892D0] outline-none font-mono" />
+        </div>
+      </div>
+
+      <!-- Entrada DMS -->
+      <div id="input-dms" class="input-panel hidden space-y-3 text-sm">
+        <div class="grid grid-cols-4 gap-2 items-end">
+          <div><label class="block text-[11px] text-[#B8D4E3]">Lat Grados</label><input id="dms-lat-d" type="number" value="33" oninput="fromDMS()" class="w-full p-2 rounded bg-[#0B3F65]/50 border border-[#165685] font-mono"/></div>
+          <div><label class="block text-[11px] text-[#B8D4E3]">Minutos</label><input id="dms-lat-m" type="number" value="2" oninput="fromDMS()" class="w-full p-2 rounded bg-[#0B3F65]/50 border border-[#165685] font-mono"/></div>
+          <div><label class="block text-[11px] text-[#B8D4E3]">Segundos</label><input id="dms-lat-s" type="number" step="any" value="50.06" oninput="fromDMS()" class="w-full p-2 rounded bg-[#0B3F65]/50 border border-[#165685] font-mono"/></div>
+          <div><label class="block text-[11px] text-[#B8D4E3]">Hemisferio</label>
+            <select id="dms-lat-h" onchange="fromDMS()" class="w-full p-2 rounded bg-[#0B3F65]/50 border border-[#165685]"><option value="-1">S (Sur)</option><option value="1">N (Norte)</option></select>
+          </div>
+        </div>
+        <div class="grid grid-cols-4 gap-2 items-end">
+          <div><label class="block text-[11px] text-[#B8D4E3]">Lon Grados</label><input id="dms-lon-d" type="number" value="71" oninput="fromDMS()" class="w-full p-2 rounded bg-[#0B3F65]/50 border border-[#165685] font-mono"/></div>
+          <div><label class="block text-[11px] text-[#B8D4E3]">Minutos</label><input id="dms-lon-m" type="number" value="36" oninput="fromDMS()" class="w-full p-2 rounded bg-[#0B3F65]/50 border border-[#165685] font-mono"/></div>
+          <div><label class="block text-[11px] text-[#B8D4E3]">Segundos</label><input id="dms-lon-s" type="number" step="any" value="45.68" oninput="fromDMS()" class="w-full p-2 rounded bg-[#0B3F65]/50 border border-[#165685] font-mono"/></div>
+          <div><label class="block text-[11px] text-[#B8D4E3]">Hemisferio</label>
+            <select id="dms-lon-h" onchange="fromDMS()" class="w-full p-2 rounded bg-[#0B3F65]/50 border border-[#165685]"><option value="-1">W (Oeste)</option><option value="1">E (Este)</option></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Entrada DDM -->
+      <div id="input-ddm" class="input-panel hidden space-y-3 text-sm">
+        <div class="grid grid-cols-3 gap-2 items-end">
+          <div><label class="block text-[11px] text-[#B8D4E3]">Lat Grados</label><input id="ddm-lat-d" type="number" value="33" oninput="fromDDM()" class="w-full p-2 rounded bg-[#0B3F65]/50 border border-[#165685] font-mono"/></div>
+          <div><label class="block text-[11px] text-[#B8D4E3]">Minutos Decimales</label><input id="ddm-lat-m" type="number" step="any" value="2.8343" oninput="fromDDM()" class="w-full p-2 rounded bg-[#0B3F65]/50 border border-[#165685] font-mono"/></div>
+          <div><label class="block text-[11px] text-[#B8D4E3]">Hemisferio</label>
+            <select id="ddm-lat-h" onchange="fromDDM()" class="w-full p-2 rounded bg-[#0B3F65]/50 border border-[#165685]"><option value="-1">S (Sur)</option><option value="1">N (Norte)</option></select>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-2 items-end">
+          <div><label class="block text-[11px] text-[#B8D4E3]">Lon Grados</label><input id="ddm-lon-d" type="number" value="71" oninput="fromDDM()" class="w-full p-2 rounded bg-[#0B3F65]/50 border border-[#165685] font-mono"/></div>
+          <div><label class="block text-[11px] text-[#B8D4E3]">Minutos Decimales</label><input id="ddm-lon-m" type="number" step="any" value="36.7613" oninput="fromDDM()" class="w-full p-2 rounded bg-[#0B3F65]/50 border border-[#165685] font-mono"/></div>
+          <div><label class="block text-[11px] text-[#B8D4E3]">Hemisferio</label>
+            <select id="ddm-lon-h" onchange="fromDDM()" class="w-full p-2 rounded bg-[#0B3F65]/50 border border-[#165685]"><option value="-1">W (Oeste)</option><option value="1">E (Este)</option></select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Entrada UTM -->
+      <div id="input-utm" class="input-panel hidden grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+        <div>
+          <label class="block text-xs text-[#B8D4E3] mb-1">Este (X) [m]</label>
+          <input id="utm-e" type="number" step="any" value="255966.4" oninput="fromUTM()" class="w-full p-2.5 rounded-lg bg-[#0B3F65]/50 border border-[#165685] font-mono outline-none"/>
+        </div>
+        <div>
+          <label class="block text-xs text-[#B8D4E3] mb-1">Norte (Y) [m]</label>
+          <input id="utm-n" type="number" step="any" value="6340512.8" oninput="fromUTM()" class="w-full p-2.5 rounded-lg bg-[#0B3F65]/50 border border-[#165685] font-mono outline-none"/>
+        </div>
+        <div>
+          <label class="block text-xs text-[#B8D4E3] mb-1">Huso / Zona (1-60)</label>
+          <input id="utm-z" type="number" min="1" max="60" value="19" oninput="fromUTM()" class="w-full p-2.5 rounded-lg bg-[#0B3F65]/50 border border-[#165685] font-mono outline-none"/>
+        </div>
+        <div>
+          <label class="block text-xs text-[#B8D4E3] mb-1">Hemisferio</label>
+          <select id="utm-h" onchange="fromUTM()" class="w-full p-2.5 rounded-lg bg-[#0B3F65]/50 border border-[#165685] outline-none">
+            <option value="S">Sur (S)</option>
+            <option value="N">Norte (N)</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Entrada MGRS -->
+      <div id="input-mgrs" class="input-panel hidden text-sm">
+        <label class="block text-xs text-[#B8D4E3] mb-1">Coordenada MGRS (Ej: 19HBD5596640512)</label>
+        <input id="in-mgrs" type="text" value="19HBD5596640512" oninput="fromMGRS()" class="w-full p-2.5 rounded-lg bg-[#0B3F65]/50 border border-[#165685] font-mono uppercase outline-none"/>
+      </div>
+    </div>
+
+    <!-- RESULTADOS SIMULTÁNEOS -->
+    <div class="mt-6">
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="text-xs uppercase tracking-wider text-[#6BB2C4] font-bold">2. Resultados en todos los sistemas</h2>
+        <span id="errorMsg" class="text-xs text-[#f28b70] font-semibold"></span>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+        <!-- Tarjeta DD -->
+        <div class="bg-[#061E31] border border-[#165685] rounded-xl p-3.5 flex justify-between items-center">
+          <div>
+            <span class="text-[11px] text-[#6BB2C4] font-semibold block">Grados Decimales (DD)</span>
+            <code id="out-dd" class="text-sm font-bold text-white">-33.047238, -71.612688</code>
+          </div>
+          <button onclick="copyText('out-dd')" title="Copiar" class="p-2 rounded-lg hover:bg-[#0B3F65] text-[#B8D4E3] hover:text-white"><i data-lucide="copy" class="w-4 h-4"></i></button>
+        </div>
+
+        <!-- Tarjeta UTM -->
+        <div class="bg-[#061E31] border border-[#165685] rounded-xl p-3.5 flex justify-between items-center">
+          <div>
+            <span class="text-[11px] text-[#E9972C] font-semibold block">Coordenadas UTM</span>
+            <code id="out-utm" class="text-sm font-bold text-white">19S 255966.40 E, 6340512.80 N</code>
+          </div>
+          <button onclick="copyText('out-utm')" title="Copiar" class="p-2 rounded-lg hover:bg-[#0B3F65] text-[#B8D4E3] hover:text-white"><i data-lucide="copy" class="w-4 h-4"></i></button>
+        </div>
+
+        <!-- Tarjeta DMS -->
+        <div class="bg-[#061E31] border border-[#165685] rounded-xl p-3.5 flex justify-between items-center">
+          <div>
+            <span class="text-[11px] text-[#3892D0] font-semibold block">Grados, Minutos, Segundos (DMS)</span>
+            <code id="out-dms" class="text-xs sm:text-sm font-bold text-white">33° 02' 50.06" S, 71° 36' 45.68" W</code>
+          </div>
+          <button onclick="copyText('out-dms')" title="Copiar" class="p-2 rounded-lg hover:bg-[#0B3F65] text-[#B8D4E3] hover:text-white"><i data-lucide="copy" class="w-4 h-4"></i></button>
+        </div>
+
+        <!-- Tarjeta DDM -->
+        <div class="bg-[#061E31] border border-[#165685] rounded-xl p-3.5 flex justify-between items-center">
+          <div>
+            <span class="text-[11px] text-[#6BB2C4] font-semibold block">Grados y Minutos Decimales (DDM)</span>
+            <code id="out-ddm" class="text-xs sm:text-sm font-bold text-white">33° 02.8343' S, 71° 36.7613' W</code>
+          </div>
+          <button onclick="copyText('out-ddm')" title="Copiar" class="p-2 rounded-lg hover:bg-[#0B3F65] text-[#B8D4E3] hover:text-white"><i data-lucide="copy" class="w-4 h-4"></i></button>
+        </div>
+
+        <!-- Tarjeta MGRS -->
+        <div class="bg-[#061E31] border border-[#165685] rounded-xl p-3.5 flex justify-between items-center">
+          <div>
+            <span class="text-[11px] text-[#a3bd8f] font-semibold block">Cuadrícula MGRS (GPS / OTAN)</span>
+            <code id="out-mgrs" class="text-sm font-bold text-white">19HBD5596640512</code>
+          </div>
+          <button onclick="copyText('out-mgrs')" title="Copiar" class="p-2 rounded-lg hover:bg-[#0B3F65] text-[#B8D4E3] hover:text-white"><i data-lucide="copy" class="w-4 h-4"></i></button>
+        </div>
+
+        <!-- Tarjeta Web Mercator -->
+        <div class="bg-[#061E31] border border-[#165685] rounded-xl p-3.5 flex justify-between items-center">
+          <div>
+            <span class="text-[11px] text-[#f28b70] font-semibold block">Web Mercator (EPSG:3857)</span>
+            <code id="out-merc" class="text-xs sm:text-sm font-bold text-white">-7971888.45, -3901511.20</code>
+          </div>
+          <button onclick="copyText('out-merc')" title="Copiar" class="p-2 rounded-lg hover:bg-[#0B3F65] text-[#B8D4E3] hover:text-white"><i data-lucide="copy" class="w-4 h-4"></i></button>
+        </div>
+      </div>
+
+      <!-- Botón Google Maps -->
+      <div class="mt-4 flex justify-end">
+        <a id="gmapsLink" href="https://www.google.com/maps?q=-33.047238,-71.612688" target="_blank"
+           class="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#647855] hover:bg-[#536446] text-white text-xs font-semibold transition">
+          <i data-lucide="map-pin" class="w-4 h-4"></i> Ver punto en Google Maps
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let activeTab = 'dd';
+
+    // Definición de Datums para Proj4js (Parámetros estándar Sudamérica)
+    const datumDefs = {
+      WGS84: '+proj=longlat +datum=WGS84 +no_defs',
+      PSAD56: '+proj=longlat +ellps=intl +towgs84=-288,175,-376,0,0,0,0 +no_defs',
+      SAD69: '+proj=longlat +ellps=aust_SA +towgs84=-66.87,4.37,-38.52,0,0,0,0 +no_defs'
+    };
+
+    function getUTMProj(zone, hemi, datum) {
+      const southFlag = hemi === 'S' ? '+south' : '';
+      const base = datumDefs[datum].replace('+proj=longlat', `+proj=utm +zone=${zone} ${southFlag} +units=m`);
+      return base;
+    }
+
+    function switchTab(tab) {
+      activeTab = tab;
+      document.querySelectorAll('.input-panel').forEach(p => p.classList.add('hidden'));
+      document.getElementById(`input-${tab}`).classList.remove('hidden');
+
+      document.querySelectorAll('.tab-btn').forEach(b => {
+        b.className = 'tab-btn py-2 px-3 rounded-lg bg-[#061E31] text-[#B8D4E3] hover:text-white border border-[#165685] transition';
+      });
+      document.getElementById(`tab-${tab}`).className = 'tab-btn py-2 px-3 rounded-lg bg-[#3892D0] text-white transition';
+    }
+
+    function recalculateFromActive() {
+      if (activeTab === 'dd') fromDD();
+      else if (activeTab === 'dms') fromDMS();
+      else if (activeTab === 'ddm') fromDDM();
+      else if (activeTab === 'utm') fromUTM();
+      else if (activeTab === 'mgrs') fromMGRS();
+    }
+
+    function toDMSString(deg, isLat) {
+      const dir = isLat ? (deg < 0 ? 'S' : 'N') : (deg < 0 ? 'W' : 'E');
+      const abs = Math.abs(deg);
+      const d = Math.floor(abs);
+      const minFloat = (abs - d) * 60;
+      const m = Math.floor(minFloat);
+      const s = ((minFloat - m) * 60).toFixed(2);
+      return `${String(d).padStart(2, '0')}° ${String(m).padStart(2, '0')}' ${String(s).padStart(5, '0')}" ${dir}`;
+    }
+
+    function toDDMString(deg, isLat) {
+      const dir = isLat ? (deg < 0 ? 'S' : 'N') : (deg < 0 ? 'W' : 'E');
+      const abs = Math.abs(deg);
+      const d = Math.floor(abs);
+      const m = ((abs - d) * 60).toFixed(4);
+      return `${String(d).padStart(2, '0')}° ${String(m).padStart(7, '0')}' ${dir}`;
+    }
+
+    function updateAllOutputs(lat, lon) {
+      const err = document.getElementById('errorMsg');
+      if (isNaN(lat) || isNaN(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        err.textContent = 'Coordenada fuera de rango válido';
+        return;
+      }
+      err.textContent = '';
+
+      const datum = document.getElementById('datumSelect').value;
+
+      // 1. DD
+      document.getElementById('out-dd').textContent = `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+
+      // 2. DMS y DDM
+      document.getElementById('out-dms').textContent = `${toDMSString(lat, true)}, ${toDMSString(lon, false)}`;
+      document.getElementById('out-ddm').textContent = `${toDDMString(lat, true)}, ${toDDMString(lon, false)}`;
+
+      // 3. UTM en el Datum seleccionado
+      const zone = Math.floor((lon + 180) / 6) + 1;
+      const hemi = lat < 0 ? 'S' : 'N';
+      const utmProj = getUTMProj(zone, hemi, datum);
+      const [easting, northing] = proj4(datumDefs[datum], utmProj, [lon, lat]);
+      document.getElementById('out-utm').textContent = `${zone}${hemi}  ${easting.toFixed(2)} E, ${northing.toFixed(2)} N`;
+
+      // Convertir a WGS84 para MGRS, Web Mercator y Google Maps
+      const [wgsLon, wgsLat] = proj4(datumDefs[datum], datumDefs.WGS84, [lon, lat]);
+
+      // 4. MGRS
+      try {
+        if (wgsLat >= -80 && wgsLat <= 84) {
+          document.getElementById('out-mgrs').textContent = mgrs.forward([wgsLon, wgsLat], 5);
+        } else {
+          document.getElementById('out-mgrs').textContent = 'No aplica en zonas polares';
+        }
+      } catch (e) {
+        document.getElementById('out-mgrs').textContent = 'Error MGRS';
+      }
+
+      // 5. Web Mercator (EPSG:3857)
+      const [mx, my] = proj4(datumDefs.WGS84, 'EPSG:3857', [wgsLon, wgsLat]);
+      document.getElementById('out-merc').textContent = `${mx.toFixed(2)}, ${my.toFixed(2)}`;
+
+      // 6. Google Maps Link
+      document.getElementById('gmapsLink').href = `https://www.google.com/maps?q=${wgsLat.toFixed(6)},${wgsLon.toFixed(6)}`;
+    }
+
+    function fromDD() {
+      const lat = parseFloat(document.getElementById('in-dd-lat').value);
+      const lon = parseFloat(document.getElementById('in-dd-lon').value);
+      updateAllOutputs(lat, lon);
+    }
+
+    function fromDMS() {
+      const ld = parseFloat(document.getElementById('dms-lat-d').value) || 0;
+      const lm = parseFloat(document.getElementById('dms-lat-m').value) || 0;
+      const ls = parseFloat(document.getElementById('dms-lat-s').value) || 0;
+      const lh = parseFloat(document.getElementById('dms-lat-h').value);
+
+      const od = parseFloat(document.getElementById('dms-lon-d').value) || 0;
+      const om = parseFloat(document.getElementById('dms-lon-m').value) || 0;
+      const os = parseFloat(document.getElementById('dms-lon-s').value) || 0;
+      const oh = parseFloat(document.getElementById('dms-lon-h').value);
+
+      const lat = lh * (Math.abs(ld) + lm / 60 + ls / 3600);
+      const lon = oh * (Math.abs(od) + om / 60 + os / 3600);
+      updateAllOutputs(lat, lon);
+    }
+
+    function fromDDM() {
+      const ld = parseFloat(document.getElementById('ddm-lat-d').value) || 0;
+      const lm = parseFloat(document.getElementById('ddm-lat-m').value) || 0;
+      const lh = parseFloat(document.getElementById('ddm-lat-h').value);
+
+      const od = parseFloat(document.getElementById('ddm-lon-d').value) || 0;
+      const om = parseFloat(document.getElementById('ddm-lon-m').value) || 0;
+      const oh = parseFloat(document.getElementById('ddm-lon-h').value);
+
+      const lat = lh * (Math.abs(ld) + lm / 60);
+      const lon = oh * (Math.abs(od) + om / 60);
+      updateAllOutputs(lat, lon);
+    }
+
+    function fromUTM() {
+      const e = parseFloat(document.getElementById('utm-e').value);
+      const n = parseFloat(document.getElementById('utm-n').value);
+      const z = parseInt(document.getElementById('utm-z').value);
+      const h = document.getElementById('utm-h').value;
+      const datum = document.getElementById('datumSelect').value;
+
+      if (isNaN(e) || isNaN(n) || isNaN(z) || z < 1 || z > 60) return;
+      const utmProj = getUTMProj(z, h, datum);
+      const [lon, lat] = proj4(utmProj, datumDefs[datum], [e, n]);
+      updateAllOutputs(lat, lon);
+    }
+
+    function fromMGRS() {
+      const str = document.getElementById('in-mgrs').value.trim().replace(/\s+/g, '');
+      const datum = document.getElementById('datumSelect').value;
+      try {
+        const [wgsLon, wgsLat] = mgrs.toPoint(str);
+        const [lon, lat] = proj4(datumDefs.WGS84, datumDefs[datum], [wgsLon, wgsLat]);
+        updateAllOutputs(lat, lon);
+      } catch (e) {
+        document.getElementById('errorMsg').textContent = 'Formato MGRS incompleto o inválido';
+      }
+    }
+
+    function copyText(id) {
+      const text = document.getElementById(id).textContent;
+      navigator.clipboard.writeText(text);
+    }
+
+    lucide.createIcons();
+    fromDD();
+  </script>
+</body>
+</html>

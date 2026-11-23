@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GeoHub | Kamila Guerrero - Geóloga</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+  <style>
+    :root {
+      --bg-main: #061E31;
+      --bg-card: #0B3F65;
+      --border-color: #165685;
+      --text-main: #FFFFFF;
+      --text-muted: #B8D4E3;
+      --accent: #3892D0;
+      --secondary: #6BB2C4;
+    }
+    body.light-mode {
+      --bg-main: #F2F5F6;
+      --bg-card: #FFFFFF;
+      --border-color: #D5E0E5;
+      --text-main: #0B3F65;
+      --text-muted: #68817C;
+    }
+    body {
+      background-color: var(--bg-main);
+      color: var(--text-main);
+      font-family: system-ui, -apple-system, sans-serif;
+      transition: background-color 0.2s, color 0.2s;
+    }
+    .geo-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+    }
+    .geo-card:hover {
+      transform: translateY(-2px);
+      border-color: #6BB2C4;
+      box-shadow: 0 10px 25px -5px rgba(11, 63, 101, 0.35);
+    }
+    body.light-mode .geo-card:hover {
+      border-color: #3892D0;
+      box-shadow: 0 10px 25px -5px rgba(11, 63, 101, 0.12);
+    }
+    .sortable-ghost {
+      opacity: 0.45;
+      border: 2px dashed #6BB2C4;
+    }
+  </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+
+  <header class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-start md:items-center gap-4 pb-6 border-b border-[#165685]/40">
+    <div class="flex items-center gap-4">
+      <div class="w-12 h-12 rounded-xl bg-[#3892D0]/20 border border-[#6BB2C4]/40 flex items-center justify-center text-[#6BB2C4]">
+        <i data-lucide="mountain" class="w-7 h-7"></i>
+      </div>
+      <div>
+        <div class="flex items-center gap-3 flex-wrap">
+          <h1 class="text-2xl font-bold tracking-tight">GeoHub</h1>
+          <span class="px-3 py-0.5 text-xs font-semibold rounded-full bg-[#6BB2C4]/20 text-[#6BB2C4] border border-[#6BB2C4]/40">
+            Kamila Guerrero • Geóloga
+          </span>
+        </div>
+        <p class="text-sm opacity-75 mt-1">
+          Directorio personal de herramientas HTML • Geología, Geografía, Minería y SIG
+        </p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-2.5 self-end md:self-auto">
+      <button onclick="toggleTheme()" title="Cambiar entre modo oscuro y claro (#F2F5F6)" class="p-2.5 rounded-lg border border-[#68817C]/50 hover:bg-[#3892D0]/20 transition">
+        <i id="theme-icon" data-lucide="sun" class="w-4 h-4"></i>
+      </button>
+      <button onclick="resetData()" class="flex items-center gap-2 px-3.5 py-2 rounded-lg border border-[#68817C]/50 hover:bg-[#3892D0]/20 text-sm font-medium transition">
+        <i data-lucide="rotate-ccw" class="w-4 h-4"></i> Restablecer
+      </button>
+      <button onclick="openAddModal()" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#3892D0] hover:bg-[#2d7eb8] text-white text-sm font-semibold shadow-lg transition">
+        <i data-lucide="plus-circle" class="w-4 h-4"></i> Añadir Herramienta
+      </button>
+    </div>
+  </header>
+
+  <section class="max-w-7xl mx-auto mt-6">
+    <div class="geo-card p-3 rounded-xl flex flex-col sm:flex-row justify-between items-center gap-3">
+      <div class="relative w-full sm:w-96">
+        <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-3 opacity-60"></i>
+        <input type="text" id="searchInput" oninput="renderCards()" placeholder="Buscar por área (Geología, Minería, SIG, Alertas...)..."
+          class="w-full pl-10 pr-4 py-2 rounded-lg bg-black/20 border border-[#68817C]/40 text-sm focus:outline-none focus:border-[#6BB2C4]" />
+      </div>
+      <div class="flex items-center gap-1 bg-black/20 p-1 rounded-lg border border-[#68817C]/40 self-end sm:self-auto">
+        <button id="btnGrid" onclick="setView('grid')" class="p-1.5 rounded bg-[#3892D0] text-white" title="Vista cuadrícula">
+          <i data-lucide="layout-grid" class="w-4 h-4"></i>
+        </button>
+        <button id="btnList" onclick="setView('list')" class="p-1.5 rounded opacity-70 hover:opacity-100" title="Vista lista">
+          <i data-lucide="list" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+
+    <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mt-4 px-1 text-xs opacity-80">
+      <div class="flex items-center gap-2">
+        <span class="w-5 h-5 rounded-full bg-[#6BB2C4]/20 text-[#6BB2C4] flex items-center justify-center">✋</span>
+        <span><strong>Arrastra y suelta</strong> cualquier tarjeta para reordenarla. Cambia el color temático con el icono de paleta.</span>
+      </div>
+      <span id="toolCount" class="font-semibold">0 herramientas disponibles</span>
+    </div>
+  </section>
+
+  <main id="cardsContainer" class="max-w-7xl mx-auto mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5"></main>
+
+  <!-- MODAL DE VISTA PREVIA -->
+  <div id="previewModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-[#0B3F65] border border-[#6BB2C4]/40 w-full max-w-6xl h-[90vh] rounded-2xl flex flex-col overflow-hidden shadow-2xl text-white">
+      <div class="flex justify-between items-center px-5 py-3 border-b border-[#165685]">
+        <span id="previewTitle" class="font-semibold text-[#6BB2C4]">Vista Previa</span>
+        <button onclick="closePreview()" class="p-1.5 rounded-lg hover:bg-white/10 text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+      <iframe id="previewFrame" src="" class="w-full flex-1 bg-[#061E31]"></iframe>
+    </div>
+  </div>
+
+  <!-- MODAL PARA AÑADIR HERRAMIENTA -->
+  <div id="addModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-[#0B3F65] border border-[#6BB2C4]/40 w-full max-w-md rounded-2xl p-6 shadow-2xl text-white">
+      <h2 class="text-lg font-bold mb-4 flex items-center gap-2">
+        <i data-lucide="folder-plus" class="w-5 h-5 text-[#6BB2C4]"></i> Nueva Herramienta
+      </h2>
+      <form onsubmit="addTool(event)" class="space-y-3 text-sm">
+        <div>
+          <label class="block text-[#B8D4E3] mb-1">Título de la herramienta</label>
+          <input required id="newTitle" type="text" placeholder="Ej: Estereograma de Fallas" class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] focus:border-[#6BB2C4] outline-none" />
+        </div>
+        <div>
+          <label class="block text-[#B8D4E3] mb-1">Descripción técnica</label>
+          <textarea required id="newDesc" rows="3" placeholder="Breve descripción de su función..." class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] focus:border-[#6BB2C4] outline-none"></textarea>
+        </div>
+        <div>
+          <label class="block text-[#B8D4E3] mb-1">Ruta del archivo o URL</label>
+          <input required id="newPath" type="text" placeholder="./modulos/estereograma.html" class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] focus:border-[#6BB2C4] outline-none" />
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-[#B8D4E3] mb-1">Área / Color</label>
+            <select id="newColor" class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none">
+              <option value="#3892D0">Geología (#3892D0)</option>
+              <option value="#647855">Geografía (#647855)</option>
+              <option value="#E9972C">Minería (#E9972C)</option>
+              <option value="#B8492C">SIG y Teledetección (#B8492C)</option>
+              <option value="#6BB2C4">Secundario (#6BB2C4)</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[#B8D4E3] mb-1">Icono</label>
+            <select id="newIcon" class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none">
+              <option value="compass">Brújula</option>
+              <option value="layers">Estratos</option>
+              <option value="gem">Mineral / QAPF</option>
+              <option value="map">Mapa / SIG</option>
+              <option value="pickaxe">Minería / Terreno</option>
+              <option value="cloud-lightning">Meteorología / Alertas</option>
+            </select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-[#B8D4E3] mb-1">Etiqueta de categoría</label>
+          <input id="newBadge" type="text" placeholder="Ej: GEOLOGÍA, MINERÍA, SIG..." class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] focus:border-[#6BB2C4] outline-none" />
+        </div>
+        <div class="flex justify-end gap-2 pt-4">
+          <button type="button" onclick="closeAddModal()" class="px-4 py-2 rounded-lg border border-[#165685] hover:bg-white/10">Cancelar</button>
+          <button type="submit" class="px-4 py-2 rounded-lg bg-[#3892D0] hover:bg-[#2d7eb8] text-white font-semibold">Guardar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const defaultTools = [
+      {
+        id: '6',
+        title: 'Monitor Unificado de Alertas por Región',
+        desc: 'Consolidador multi-organismo (DMC, Armada/DIRECTEMAR, SENAPRED, SERNAGEOMIN, SHOA y CONAF) con matriz regional y generador de despacho único.',
+        path: './modulos/alertas_regionales.html',
+        icon: 'cloud-lightning',
+        badge: 'NUEVO • MULTI-ORGANISMO',
+        color: '#E9972C'
+      },
+      {
+        id: '5',
+        title: 'Conversor Geodésico Universal (SIG)',
+        desc: 'Conversión bidireccional entre Grados Decimales (DD), Grados Minutos Segundos (DMS), Grados Minutos Decimales (DDM), UTM y MGRS con soporte multi-datum (WGS84, PSAD56, SAD69, SIRGAS).',
+        path: './modulos/conversor_sig.html',
+        icon: 'map',
+        badge: 'SIG Y TELEDETECCIÓN',
+        color: '#B8492C'
+      },
+      {
+        id: '1',
+        title: 'Calculadora de Rumbo y Buzamiento',
+        desc: 'Conversión automática entre notación cuadrante, azimutal (RHR) y dirección de buzamiento para mediciones estructurales en terreno.',
+        path: './modulos/calculadora_buzamiento.html',
+        icon: 'compass',
+        badge: 'GEOLOGÍA',
+        color: '#3892D0'
+      },
+      {
+        id: '2',
+        title: 'Libreta Digital de Terreno',
+        desc: 'Registro estructurado de estaciones geológicas, litología, estructuras, alteraciones y exportación rápida de notas de campo.',
+        path: './modulos/libreta_terreno.html',
+        icon: 'pickaxe',
+        badge: 'MINERÍA',
+        color: '#E9972C'
+      },
+      {
+        id: '3',
+        title: 'Clasificador Petrográfico QAPF',
+        desc: 'Cálculo porcentual normalizado de Cuarzo, Feldespato Alcalino y Plagioclasa para clasificación modal de rocas ígneas.',
+        path: './modulos/clasificador_qapf.html',
+        icon: 'gem',
+        badge: 'GEOLOGÍA',
+        color: '#6BB2C4'
+      },
+      {
+        id: '4',
+        title: 'Columna Estratigráfica Rápida',
+        desc: 'Generador visual de secuencias sedimentarias y volcánicas con espesores, litologías y contactos formacionales.',
+        path: './modulos/columna_estratigrafica.html',
+        icon: 'layers',
+        badge: 'GEOGRAFÍA',
+        color: '#647855'
+      }
+    ];
+
+    const customPalette = ['#3892D0', '#647855', '#E9972C', '#B8492C', '#6BB2C4', '#68817C'];
+    let tools = JSON.parse(localStorage.getItem('kamila_geohub_v4_tools')) || defaultTools;
+    let currentView = 'grid';
+
+    function saveTools() {
+      localStorage.setItem('kamila_geohub_v4_tools', JSON.stringify(tools));
+    }
+
+    function renderCards() {
+      const container = document.getElementById('cardsContainer');
+      const query = document.getElementById('searchInput').value.toLowerCase();
+      container.innerHTML = '';
+
+      const filtered = tools.filter(t =>
+        t.title.toLowerCase().includes(query) ||
+        t.desc.toLowerCase().includes(query) ||
+        t.badge.toLowerCase().includes(query) ||
+        t.path.toLowerCase().includes(query)
+      );
+
+      document.getElementById('toolCount').textContent = `${filtered.length} herramientas disponibles`;
+
+      filtered.forEach(tool => {
+        const badgeHTML = tool.badge
+          ? `<span class="px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full" style="background:${tool.color}28; color:${tool.color}; border:1px solid ${tool.color}70">${tool.badge}</span>`
+          : '';
+
+        const card = document.createElement('div');
+        card.dataset.id = tool.id;
+        card.className = `geo-card rounded-2xl p-5 flex ${currentView === 'list' ? 'flex-col sm:flex-row sm:items-center justify-between gap-4' : 'flex-col justify-between'} relative cursor-grab active:cursor-grabbing`;
+
+        card.innerHTML = `
+          <div class="${currentView === 'list' ? 'flex items-center gap-4 flex-1' : ''}">
+            <div class="flex justify-between items-start ${currentView === 'list' ? '' : 'mb-4'}">
+              <div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0" style="background:${tool.color}25; border:1px solid ${tool.color}55; color:${tool.color}">
+                <i data-lucide="${tool.icon}" class="w-5 h-5"></i>
+              </div>
+              ${currentView === 'grid' ? `
+                <div class="flex items-center gap-2">
+                  ${badgeHTML}
+                  <button onclick="cycleColor('${tool.id}')" title="Cambiar color de área" class="p-1.5 rounded-lg hover:bg-black/20 opacity-75 hover:opacity-100 transition">
+                    <i data-lucide="palette" class="w-4 h-4"></i>
+                  </button>
+                  <button onclick="deleteTool('${tool.id}')" title="Eliminar tarjeta" class="p-1.5 rounded-lg hover:bg-[#B8492C]/30 opacity-75 hover:opacity-100 transition">
+                    <i data-lucide="trash-2" class="w-4 h-4"></i>
+                  </button>
+                </div>
+              ` : ''}
+            </div>
+
+            <div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <h3 class="font-bold text-base">${tool.title}</h3>
+                ${currentView === 'list' ? badgeHTML : ''}
+              </div>
+              <p class="text-xs opacity-80 mt-1.5 leading-relaxed line-clamp-3">${tool.desc}</p>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between gap-3 ${currentView === 'list' ? 'shrink-0' : 'mt-6 pt-3 border-t border-current/10'}">
+            <code class="text-[11px] opacity-60 truncate max-w-[160px]">${tool.path}</code>
+            <div class="flex items-center gap-2">
+              <button onclick="openPreview('${tool.title}', '${tool.path}')" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-black/20 hover:bg-[#3892D0] hover:text-white border border-current/15 text-xs font-medium transition">
+                <i data-lucide="eye" class="w-3.5 h-3.5"></i> Vista previa
+              </button>
+              <a href="${tool.path}" target="_blank" title="Abrir en pestaña nueva" class="p-1.5 rounded-lg bg-black/20 hover:bg-[#3892D0] hover:text-white border border-current/15 transition">
+                <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+              </a>
+            </div>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+
+      lucide.createIcons();
+    }
+
+    function cycleColor(id) {
+      const tool = tools.find(t => t.id === id);
+      if (tool) {
+        const idx = customPalette.indexOf(tool.color);
+        tool.color = customPalette[(idx + 1) % customPalette.length];
+        saveTools();
+        renderCards();
+      }
+    }
+
+    function setView(view) {
+      currentView = view;
+      const container = document.getElementById('cardsContainer');
+      const btnGrid = document.getElementById('btnGrid');
+      const btnList = document.getElementById('btnList');
+
+      if (view === 'grid') {
+        container.className = 'max-w-7xl mx-auto mt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5';
+        btnGrid.className = 'p-1.5 rounded bg-[#3892D0] text-white';
+        btnList.className = 'p-1.5 rounded opacity-70 hover:opacity-100';
+      } else {
+        container.className = 'max-w-7xl mx-auto mt-6 flex flex-col gap-3';
+        btnList.className = 'p-1.5 rounded bg-[#3892D0] text-white';
+        btnGrid.className = 'p-1.5 rounded opacity-70 hover:opacity-100';
+      }
+      renderCards();
+    }
+
+    function openPreview(title, path) {
+      document.getElementById('previewTitle').textContent = title;
+      document.getElementById('previewFrame').src = path;
+      document.getElementById('previewModal').classList.remove('hidden');
+      document.getElementById('previewModal').classList.add('flex');
+    }
+    function closePreview() {
+      document.getElementById('previewFrame').src = '';
+      document.getElementById('previewModal').classList.add('hidden');
+      document.getElementById('previewModal').classList.remove('flex');
+    }
+
+    function openAddModal() {
+      document.getElementById('addModal').classList.remove('hidden');
+      document.getElementById('addModal').classList.add('flex');
+    }
+    function closeAddModal() {
+      document.getElementById('addModal').classList.add('hidden');
+      document.getElementById('addModal').classList.remove('flex');
+    }
+    function addTool(e) {
+      e.preventDefault();
+      tools.unshift({
+        id: Date.now().toString(),
+        title: document.getElementById('newTitle').value,
+        desc: document.getElementById('newDesc').value,
+        path: document.getElementById('newPath').value,
+        icon: document.getElementById('newIcon').value,
+        badge: document.getElementById('newBadge').value,
+        color: document.getElementById('newColor').value
+      });
+      saveTools();
+      renderCards();
+      e.target.reset();
+      closeAddModal();
+    }
+    function deleteTool(id) {
+      if (confirm('¿Eliminar esta herramienta de tu panel?')) {
+        tools = tools.filter(t => t.id !== id);
+        saveTools();
+        renderCards();
+      }
+    }
+    function resetData() {
+      if (confirm('¿Restablecer el orden y las herramientas originales?')) {
+        localStorage.removeItem('kamila_geohub_v4_tools');
+        tools = [...defaultTools];
+        renderCards();
+      }
+    }
+
+    function toggleTheme() {
+      document.body.classList.toggle('light-mode');
+      const isLight = document.body.classList.contains('light-mode');
+      document.getElementById('theme-icon').setAttribute('data-lucide', isLight ? 'moon' : 'sun');
+      lucide.createIcons();
+    }
+
+    new Sortable(document.getElementById('cardsContainer'), {
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      onEnd: function () {
+        const newOrderIds = Array.from(document.querySelectorAll('#cardsContainer > div')).map(el => el.dataset.id);
+        tools.sort((a, b) => newOrderIds.indexOf(a.id) - newOrderIds.indexOf(b.id));
+        saveTools();
+      }
+    });
+
+    renderCards();
+  </script>
+</body>
+</html>
