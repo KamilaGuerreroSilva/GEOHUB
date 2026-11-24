@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Monitor Unificado de Alertas por Región y Comuna | Kamila Guerrero</title>
+  <title>Monitor de Alertas por Región y Comuna | Kamila Guerrero</title>
+  <meta name="theme-color" content="#061E31" />
+  <meta name="description" content="Monitor regional y comunal de alertas, mapas y capas de referencia para Chile." />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/lucide@latest"></script>
   <!-- Leaflet CSS & JS -->
@@ -12,6 +14,10 @@
   <!-- Esri Leaflet -->
   <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js"></script>
   <script src="https://unpkg.com/esri-leaflet-vector@4.2.3/dist/esri-leaflet-vector.js"></script>
+  <!-- Herramientas de dibujo y exportación cartográfica -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+  <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
   <style>
     body {
       background-color: #061E31;
@@ -34,8 +40,33 @@
       0%, 100% { opacity: 1; transform: scale(1); }
       50% { opacity: 0.4; transform: scale(1.25); }
     }
-    .live-dot {
-      animation: pulse-dot 2s infinite;
+    .live-dot { animation: pulse-dot 2s infinite; }
+    button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+    button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+      outline: 2px solid #6BB2C4; outline-offset: 2px;
+    }
+    .map-builder-shell { height: min(96vh, 1050px); }
+    .map-builder-body { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+    .map-builder-map-panel { min-height: 0; height: 100%; }
+    .map-builder-map { min-height: 0; height: 100%; background: #041524; }
+    .map-builder-map .leaflet-control { border-radius: 8px; overflow: hidden; }
+    .leaflet-draw-toolbar a { background-color: #fff; }
+    .leaflet-popup-content { line-height: 1.45; }
+    .status-dot { width: 8px; height: 8px; display: inline-block; border-radius: 999px; flex: 0 0 auto; }
+    .map-tool-note { color: #B8D4E3; font-size: 11px; line-height: 1.45; }
+    @media (max-width: 1023px) {
+      .map-builder-body { grid-template-rows: minmax(0, 28vh) minmax(0, 1fr); }
+      .map-builder-side { max-height: 28vh; overflow-y: auto; }
+      .map-builder-map-panel { min-height: 0; }
+    }
+    @media print {
+      body * { visibility: hidden !important; }
+      #mapBuilderModal, #mapBuilderModal * { visibility: visible !important; }
+      #mapBuilderModal { position: absolute !important; inset: 0 !important; display: block !important; overflow: visible !important; background: #fff !important; padding: 0 !important; }
+      #mapBuilderModal .map-builder-shell { width: 100% !important; max-width: none !important; max-height: none !important; height: auto !important; overflow: visible !important; background: #fff !important; color: #111 !important; border: 0 !important; box-shadow: none !important; }
+      #mapBuilderModal .map-builder-toolbar, #mapBuilderModal .map-builder-side, #mapBuilderModal .map-builder-footer, #mapBuilderModal .map-builder-close { display: none !important; }
+      #mapBuilderModal .map-builder-print-heading { display: block !important; color: #111 !important; padding: 8px 0 !important; }
+      #mapBuilderCanvas { width: 100% !important; height: 82vh !important; min-height: 82vh !important; }
     }
   </style>
 </head>
@@ -65,7 +96,10 @@
           <i data-lucide="plus-circle" class="w-4 h-4"></i> + Nueva Alerta
         </button>
         <button onclick="fetchLiveAll()" id="btnSyncAll" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#647855] hover:bg-[#536446] text-white text-xs font-semibold transition">
-          <i data-lucide="refresh-cw" class="w-4 h-4"></i> Meteo + Sismos
+          <i data-lucide="refresh-cw" class="w-4 h-4"></i> Actualizar todo
+        </button>
+        <button onclick="fetchConafRedButton()" id="btnSyncConaf" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#B42318] hover:bg-[#8f1c14] text-white text-xs font-extrabold shadow transition">
+          <i data-lucide="flame" class="w-4 h-4"></i> Sincronizar CONAF
         </button>
         <button onclick="shareNationalWhatsApp()" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#25D366] hover:bg-[#1ebe5d] text-[#061E31] text-xs font-extrabold shadow transition">
           <i data-lucide="share-2" class="w-4 h-4"></i> Resumen WhatsApp
@@ -73,6 +107,15 @@
         <button onclick="openReportModal()" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#E9972C] hover:bg-[#d68620] text-[#061E31] text-xs font-bold transition">
           <i data-lucide="file-text" class="w-4 h-4"></i> Boletín Único
         </button>
+        <button onclick="openMapBuilder()" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#165685] hover:bg-[#1d6b9f] text-white text-xs font-bold border border-[#6BB2C4]/40 transition">
+          <i data-lucide="map-pinned" class="w-4 h-4"></i> Crear mapa
+        </button>
+        <button onclick="openAddAlertModal('botonrojo')" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#B42318] hover:bg-[#8f1c14] text-white text-xs font-extrabold shadow-lg transition">
+          <i data-lucide="flame" class="w-4 h-4"></i> Registrar Botón Rojo
+        </button>
+        <a href="https://www.conaf.cl/incendios/situacion-actual-y-pronostico-de-incendios/" target="_blank" rel="noopener noreferrer" class="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#7F1D1D] hover:bg-[#641717] text-white text-xs font-bold shadow transition">
+          <i data-lucide="external-link" class="w-4 h-4"></i> Fuente CONAF
+        </a>
       </div>
     </div>
 
@@ -87,18 +130,19 @@
 
         <div class="md:col-span-4">
           <select id="filterRegion" onchange="onRegionFilterChange()" class="w-full p-2 rounded-xl bg-[#061E31] border border-[#165685] text-xs text-white outline-none">
-            <option value="TODAS">📍 Todas las Regiones (XV a XII)</option>
+            <option value="TODAS">Todas las regiones (XV a XII)</option>
           </select>
         </div>
 
         <div class="md:col-span-3">
           <select id="filterAgency" onchange="renderDashboard()" class="w-full p-2 rounded-xl bg-[#061E31] border border-[#165685] text-xs text-white outline-none">
-            <option value="TODOS">🏛️ Todos los Organismos</option>
+            <option value="TODOS">Todos los organismos</option>
             <option value="DMC">DMC (Meteorología)</option>
             <option value="ARMADA">Armada / DIRECTEMAR</option>
             <option value="SENAPRED">SENAPRED</option>
             <option value="SERNAGEOMIN">SERNAGEOMIN</option>
-            <option value="CONAF">CONAF</option>
+            <option value="CONAF">CONAF (todos)</option>
+            <option value="CONAF_BOTON_ROJO">CONAF · Botón Rojo</option>
             <option value="SHOA">SHOA</option>
           </select>
         </div>
@@ -108,27 +152,33 @@
       <div class="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3 pt-2 border-t border-[#165685]/60">
         <div class="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold" id="severityPills">
           <button onclick="setSeverityFilter('TODAS')" data-sev="TODAS" class="sev-pill px-3 py-1 rounded-full bg-[#3892D0] text-white ring-2 ring-white transition">Todas</button>
-          <button onclick="setSeverityFilter('ALARMA')" data-sev="ALARMA" class="sev-pill px-3 py-1 rounded-full bg-[#061E31] text-[#f28b70] border border-[#B8492C]/50 hover:bg-[#B8492C]/20 transition">🔴 Rojas / Alarmas</button>
-          <button onclick="setSeverityFilter('ALERTA')" data-sev="ALERTA" class="sev-pill px-3 py-1 rounded-full bg-[#061E31] text-[#E9972C] border border-[#E9972C]/50 hover:bg-[#E9972C]/20 transition">🟠 Amarillas / Alertas</button>
-          <button onclick="setSeverityFilter('AVISO')" data-sev="AVISO" class="sev-pill px-3 py-1 rounded-full bg-[#061E31] text-[#6BB2C4] border border-[#3892D0]/50 hover:bg-[#3892D0]/20 transition">🟡 Avisos / ATP</button>
+          <button onclick="setSeverityFilter('ALARMA')" data-sev="ALARMA" class="sev-pill px-3 py-1 rounded-full bg-[#061E31] text-[#f28b70] border border-[#B8492C]/50 hover:bg-[#B8492C]/20 transition"><span class="status-dot bg-[#ef4444]"></span> Rojas / Alarmas</button>
+          <button onclick="setSeverityFilter('ALERTA')" data-sev="ALERTA" class="sev-pill px-3 py-1 rounded-full bg-[#061E31] text-[#E9972C] border border-[#E9972C]/50 hover:bg-[#E9972C]/20 transition"><span class="status-dot bg-[#f59e0b]"></span> Amarillas / Alertas</button>
+          <button onclick="setSeverityFilter('AVISO')" data-sev="AVISO" class="sev-pill px-3 py-1 rounded-full bg-[#061E31] text-[#6BB2C4] border border-[#3892D0]/50 hover:bg-[#3892D0]/20 transition"><span class="status-dot bg-[#38bdf8]"></span> Avisos / ATP</button>
+          <button onclick="setSeverityFilter('BOTON_ROJO')" data-sev="BOTON_ROJO" class="sev-pill px-3 py-1 rounded-full bg-[#061E31] text-[#ffb4ad] border border-[#B42318]/70 hover:bg-[#B42318]/20 transition"><i data-lucide="flame" class="w-3 h-3 inline-block mr-1"></i> Botón Rojo CONAF</button>
           <button onclick="toggleAllRegionsExpand()" class="ml-1 px-3 py-1 rounded-full bg-[#061E31] hover:bg-[#165685] text-[#B8D4E3] border border-[#165685] transition">
-            📂 Desplegar / Contraer Todas
+            <i data-lucide="folder-open" class="w-3.5 h-3.5 inline-block mr-1"></i> Desplegar / contraer todas
           </button>
         </div>
 
         <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
-          <a href="https://www.meteochile.gob.cl/PortalDMC-web/index.xhtml" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">DMC ↗</a>
-          <a href="https://meteoarmada.directemar.cl/" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">Armada ↗</a>
-          <a href="https://senapred.cl/alertas/" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">SENAPRED ↗</a>
-          <a href="https://www.sernageomin.cl/red-nacional-de-vigilancia-volcanica/" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">SERNAGEOMIN ↗</a>
-          <a href="http://www.snamchile.cl/" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">SHOA ↗</a>
+          <a href="https://www.meteochile.gob.cl/PortalDMC-web/index.xhtml" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">DMC <i data-lucide="external-link" class="w-3 h-3 inline-block"></i></a>
+          <a href="https://meteoarmada.directemar.cl/" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">Armada <i data-lucide="external-link" class="w-3 h-3 inline-block"></i></a>
+          <a href="https://senapred.cl/alertas/" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">SENAPRED <i data-lucide="external-link" class="w-3 h-3 inline-block"></i></a>
+          <a href="https://www.sernageomin.cl/red-nacional-de-vigilancia-volcanica/" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">SERNAGEOMIN <i data-lucide="external-link" class="w-3 h-3 inline-block"></i></a>
+          <a href="http://www.snamchile.cl/" target="_blank" class="px-2 py-0.5 rounded bg-[#061E31] hover:bg-[#3892D0] border border-[#165685] transition">SHOA <i data-lucide="external-link" class="w-3 h-3 inline-block"></i></a>
+          <a href="https://www.conaf.cl/incendios/situacion-actual-y-pronostico-de-incendios/" target="_blank" rel="noopener noreferrer" class="px-2 py-0.5 rounded bg-[#B42318]/20 hover:bg-[#B42318] text-[#ffb4ad] border border-[#B42318]/70 transition">Botón Rojo CONAF <i data-lucide="external-link" class="w-3 h-3 inline-block"></i></a>
           <button onclick="exportCSV()" class="ml-1 px-2 py-0.5 rounded bg-[#647855]/40 hover:bg-[#647855] text-white border border-[#647855] transition">CSV</button>
+        </div>
+        <div class="flex flex-wrap items-center gap-2 text-[10px] border-t border-[#165685]/50 pt-2">
+          <span id="conafSyncStatus" class="inline-flex items-center gap-1.5 text-[#B8D4E3]" aria-live="polite"><span class="status-dot" style="background:#94a3b8"></span> CONAF: esperando primera consulta</span>
+          <span class="text-[#6BB2C4]">Datos territoriales consultados directamente desde el servicio ArcGIS atribuido a GEPRIF/CONAF. La hora mostrada corresponde a la consulta del monitor.</span>
         </div>
       </div>
     </div>
 
     <!-- RESUMEN KPI -->
-    <div id="kpiRow" class="grid grid-cols-2 sm:grid-cols-5 gap-3"></div>
+    <div id="kpiRow" class="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-3"></div>
 
     <!-- LAYOUT PRINCIPAL: MAPA (4/12) + REGIONES CON COMUNAS DESPLEGABLES (8/12) -->
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
@@ -158,7 +208,7 @@
                 <option value="esri_sat">Esri Satelital</option>
                 <option value="esri_vector_key">Esri Vectorial (Key)</option>
               </select>
-              <button onclick="promptEsriKey()" title="API Key Esri" class="px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] border border-[#165685] text-[#6BB2C4]">🔑</button>
+              <button onclick="promptEsriKey()" title="Configurar API Key de Esri" aria-label="Configurar API Key de Esri" class="px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] border border-[#165685] text-[#6BB2C4]"><i data-lucide="key-round" class="w-4 h-4"></i></button>
               <label class="flex items-center gap-1 px-2 py-1 rounded bg-[#0B3F65] border border-[#165685] cursor-pointer select-none">
                 <input type="checkbox" id="toggleQuakes" checked onchange="updateQuakeMarkers()" class="accent-[#E9972C]">
                 <span>Sismos</span>
@@ -172,7 +222,9 @@
             <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#B8492C] inline-block"></span> Roja</span>
             <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#E9972C] inline-block"></span> Amarilla</span>
             <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#3892D0] inline-block"></span> Aviso/ATP</span>
+            <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full inline-block" style="background:#D92D20"></span> Botón Rojo CONAF</span>
             <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#647855] inline-block"></span> Normal</span>
+            <span class="w-full text-[9px] text-[#6BB2C4] mt-1">Cartografía base: Esri. Los marcadores regionales son referencias de ubicación, no límites comunales.</span>
           </div>
         </div>
 
@@ -216,17 +268,20 @@
       <!-- Plantillas Rápidas -->
       <div class="mb-4 bg-[#061E31] p-2.5 rounded-xl border border-[#165685]">
         <span class="block text-[10px] uppercase tracking-wider text-[#6BB2C4] font-bold mb-1.5">Plantillas Rápidas:</span>
+        <p class="text-[10px] text-[#B8D4E3] mb-2">El Botón Rojo se incorpora automáticamente desde la capa territorial pública atribuida a GEPRIF/CONAF al sincronizar. Usa este formulario solo para añadir un registro manual complementario o corregir una cobertura que la fuente no publique.</p>
         <div class="flex flex-wrap gap-1.5 text-[11px]">
-          <button type="button" onclick="applyTemplate('marejadas')" class="px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition">🌊 Marejadas Armada</button>
-          <button type="button" onclick="applyTemplate('viento')" class="px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition">💨 Viento DMC</button>
-          <button type="button" onclick="applyTemplate('atp')" class="px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition">🛡️ ATP SENAPRED</button>
-          <button type="button" onclick="applyTemplate('volcan')" class="px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition">🌋 Alerta Volcánica</button>
-          <button type="button" onclick="applyTemplate('remocion')" class="px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition">⛰️ Remociones SERNAGEOMIN</button>
+          <button type="button" onclick="applyTemplate('marejadas')" class="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition"><i data-lucide="waves" class="w-3.5 h-3.5"></i> Marejadas Armada</button>
+          <button type="button" onclick="applyTemplate('viento')" class="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition"><i data-lucide="wind" class="w-3.5 h-3.5"></i> Viento DMC</button>
+          <button type="button" onclick="applyTemplate('atp')" class="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition"><i data-lucide="shield-check" class="w-3.5 h-3.5"></i> ATP SENAPRED</button>
+          <button type="button" onclick="applyTemplate('volcan')" class="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition"><i data-lucide="mountain" class="w-3.5 h-3.5"></i> Alerta volcánica</button>
+          <button type="button" onclick="applyTemplate('remocion')" class="inline-flex items-center gap-1 px-2 py-1 rounded bg-[#0B3F65] hover:bg-[#3892D0] transition"><i data-lucide="mountain-snow" class="w-3.5 h-3.5"></i> Remociones SERNAGEOMIN</button>
+          <button type="button" onclick="applyTemplate('botonrojo')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[#B42318] hover:bg-[#8f1c14] text-white font-bold border border-[#ffb4ad]/50 transition"><i data-lucide="flame" class="w-3.5 h-3.5"></i> Botón Rojo CONAF</button>
         </div>
       </div>
 
       <form onsubmit="saveNewAlert(event)" class="space-y-3 text-sm">
         <input type="hidden" id="editAlertId" value="" />
+        <input type="hidden" id="inRecordType" value="GENERAL" />
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label class="block text-xs text-[#B8D4E3] mb-1">Región</label>
@@ -247,13 +302,14 @@
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label class="block text-xs text-[#B8D4E3] mb-1">Nivel / Severidad</label>
+            <label id="inLevelLabel" class="block text-xs text-[#B8D4E3] mb-1">Nivel / Severidad</label>
             <select id="inLevel" required class="w-full p-2.5 rounded-lg bg-[#061E31] border border-[#165685] outline-none">
-              <option value="ALARMA">🔴 Alarma / Alerta Roja</option>
-              <option value="ALERTA">🟠 Alerta / Alerta Amarilla</option>
-              <option value="AVISO">🟡 Aviso / Alerta Temprana (ATP)</option>
-              <option value="VERDE">🟢 Vigilancia / Normal</option>
+              <option value="ALARMA">Alarma / Alerta Roja</option>
+              <option value="ALERTA">Alerta / Alerta Amarilla</option>
+              <option value="AVISO">Aviso / Alerta Temprana (ATP)</option>
+              <option value="VERDE">Vigilancia / Normal</option>
             </select>
+            <p id="inLevelHint" class="text-[10px] text-[#8FB4C8] mt-1">Los niveles corresponden a la clasificación del aviso o alerta. El Botón Rojo CONAF se identifica por separado.</p>
           </div>
           <div>
             <label class="block text-xs text-[#B8D4E3] mb-1">Fenómeno / Evento</label>
@@ -323,6 +379,93 @@
         <button onclick="downloadReport()" class="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#647855] hover:bg-[#536446] text-white text-xs font-bold">
           <i data-lucide="download" class="w-4 h-4"></i> Descargar .TXT
         </button>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- GENERADOR CARTOGRÁFICO: independiente del mapa de monitoreo -->
+  <div id="mapBuilderModal" class="fixed inset-0 bg-black/90 backdrop-blur-sm hidden z-[70] p-2 md:p-4 flex items-center justify-center">
+    <div class="map-builder-shell bg-[#0B3F65] border border-[#6BB2C4]/50 w-full max-w-[1500px] mx-auto rounded-2xl shadow-2xl flex flex-col max-h-[96vh] overflow-hidden">
+      <div class="map-builder-toolbar px-4 py-3 border-b border-[#165685] flex flex-wrap items-center justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <i data-lucide="map-pinned" class="w-5 h-5 text-[#6BB2C4]"></i>
+            <h2 class="text-base md:text-lg font-bold">Generador de mapas</h2>
+          </div>
+          <p class="text-[11px] text-[#B8D4E3]">Dibuja puntos, áreas y recorridos. Exporta el resultado sin alterar el mapa de monitoreo.</p>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <button onclick="saveMapProject()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#647855] hover:bg-[#536446] text-white text-xs font-bold"><i data-lucide="save" class="w-4 h-4"></i> Guardar proyecto</button>
+          <button onclick="downloadMapGeoJSON()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#165685] hover:bg-[#1d6b9f] text-white text-xs font-bold"><i data-lucide="file-code" class="w-4 h-4"></i> GeoJSON</button>
+          <button onclick="exportMapPNG()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#3892D0] hover:bg-[#2d7eb8] text-white text-xs font-bold"><i data-lucide="image" class="w-4 h-4"></i> PNG</button>
+          <button onclick="printMapBuilder()" class="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#E9972C] hover:bg-[#d68620] text-[#061E31] text-xs font-bold"><i data-lucide="printer" class="w-4 h-4"></i> Imprimir / PDF</button>
+          <button onclick="closeMapBuilder()" aria-label="Cerrar generador de mapas" class="map-builder-close p-2 rounded-lg hover:bg-white/10"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+      </div>
+      <div class="map-builder-print-heading hidden px-4 pt-3">
+        <h1 id="mapPrintTitle" class="text-xl font-bold"></h1>
+        <p id="mapPrintMeta" class="text-sm"></p>
+      </div>
+      <div class="map-builder-body flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[290px_minmax(0,1fr)]">
+        <aside class="map-builder-side p-4 border-b lg:border-b-0 lg:border-r border-[#165685] overflow-y-auto space-y-3 max-h-[34vh] lg:max-h-none">
+          <div>
+            <label for="mapProjectTitle" class="block text-xs font-semibold text-[#B8D4E3] mb-1">Título del mapa</label>
+            <input id="mapProjectTitle" type="text" value="Mapa de alertas regionales" maxlength="100" class="w-full p-2 rounded-lg bg-[#061E31] border border-[#165685] text-sm text-white" />
+          </div>
+          <div>
+            <label for="savedMapProjects" class="block text-xs font-semibold text-[#B8D4E3] mb-1">Proyectos guardados en este dispositivo</label>
+            <select id="savedMapProjects" onchange="loadMapProject()" class="w-full p-2 rounded-lg bg-[#061E31] border border-[#165685] text-xs text-white">
+              <option value="">Seleccionar un mapa guardado…</option>
+            </select>
+          </div>
+          <div>
+            <label for="mapBuilderRegion" class="block text-xs font-semibold text-[#B8D4E3] mb-1">Centrar en región</label>
+            <select id="mapBuilderRegion" onchange="focusBuilderRegion()" class="w-full p-2 rounded-lg bg-[#061E31] border border-[#165685] text-sm text-white">
+              <option value="TODAS">Chile completo</option>
+            </select>
+          </div>
+          <div>
+            <label for="mapBuilderBasemap" class="block text-xs font-semibold text-[#B8D4E3] mb-1">Cartografía base</label>
+            <select id="mapBuilderBasemap" onchange="changeBuilderBasemap()" class="w-full p-2 rounded-lg bg-[#061E31] border border-[#165685] text-sm text-white">
+              <option value="esri_dark">Esri oscuro</option>
+              <option value="esri_topo">Esri topográfico</option>
+              <option value="esri_sat">Esri satelital</option>
+            </select>
+          </div>
+          <div class="rounded-xl bg-[#061E31] border border-[#165685] p-3 space-y-2">
+            <p class="text-xs font-bold text-white">Capas de información</p>
+            <label class="flex items-start gap-2 text-xs text-[#E2EEF5]"><input id="mapShowAlerts" type="checkbox" checked onchange="updateBuilderAlertLayer()" class="accent-[#E9972C] mt-0.5"><span>Mostrar alertas del registro</span></label>
+            <label class="flex items-start gap-2 text-xs text-[#E2EEF5]"><input id="mapShowQuakes" type="checkbox" checked onchange="updateBuilderQuakeLayer()" class="accent-[#E9972C] mt-0.5"><span>Mostrar sismos recientes (cuando estén cargados)</span></label>
+            <label class="flex items-start gap-2 text-xs text-[#E2EEF5]"><input id="mapShowConaf" type="checkbox" checked onchange="updateBuilderConafLayer()" class="accent-[#B42318] mt-0.5"><span>Mostrar cobertura territorial Botón Rojo CONAF</span></label>
+            <p class="map-tool-note">Las alertas generales se ubican en referencias regionales. La cobertura Botón Rojo se dibuja con la geometría que devuelve el servicio territorial consultado.</p>
+          </div>
+          <div class="rounded-xl bg-[#061E31] border border-[#165685] p-3 space-y-2">
+            <p class="text-xs font-bold text-white">Herramientas de dibujo</p>
+            <p class="map-tool-note">Usa los controles que aparecen sobre el mapa para añadir marcadores, líneas, polígonos, rectángulos o círculos. Los elementos dibujados se guardan en este dispositivo.</p>
+            <button onclick="clearMapDrawings()" class="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-[#B8492C]/20 hover:bg-[#B8492C] border border-[#B8492C]/60 text-[#ffb4ad] hover:text-white text-xs font-semibold"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i> Borrar dibujos</button>
+          </div>
+          <div class="rounded-xl bg-[#3a1115] border border-[#B42318]/70 p-3 space-y-1.5">
+            <p class="text-xs font-bold text-[#ffb4ad] inline-flex items-center gap-1.5"><i data-lucide="flame" class="w-3.5 h-3.5"></i> Botón Rojo CONAF</p>
+            <p class="map-tool-note">La cobertura se consulta automáticamente desde el servicio geográfico y se dibuja en este mapa cuando la fuente entrega geometrías. La plataforma oficial sigue siendo la referencia de validación.</p>
+            <a href="https://www.conaf.cl/incendios/situacion-actual-y-pronostico-de-incendios/" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 text-xs font-bold text-white underline underline-offset-2">Abrir información oficial <i data-lucide="external-link" class="w-3 h-3"></i></a>
+          </div>
+          <div class="rounded-xl bg-[#061E31] border border-[#165685] p-3">
+            <p class="text-xs font-bold text-white mb-1">Exportación y datos</p>
+            <p class="map-tool-note">GeoJSON conserva los elementos dibujados y, opcionalmente, las referencias de alertas y sismos. PNG depende de que el proveedor cartográfico permita captura entre dominios; Imprimir / PDF es la alternativa.</p>
+            <p id="mapBuilderStatus" class="text-[11px] text-[#6BB2C4] mt-2" aria-live="polite">Mapa listo para editar.</p>
+          </div>
+        </aside>
+        <div class="map-builder-map-panel min-h-0 flex flex-col">
+          <div id="mapBuilderCanvas" class="map-builder-map w-full flex-1 z-10"></div>
+          <div class="map-builder-footer px-3 py-2 bg-[#061E31] border-t border-[#165685] flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-[#B8D4E3]">
+            <span class="inline-flex items-center gap-1"><span class="status-dot" style="background:#B8492C"></span> Alarma / Roja</span>
+            <span class="inline-flex items-center gap-1"><span class="status-dot" style="background:#E9972C"></span> Alerta / Amarilla</span>
+            <span class="inline-flex items-center gap-1"><span class="status-dot" style="background:#3892D0"></span> Aviso / ATP</span>
+            <span class="inline-flex items-center gap-1"><span class="status-dot" style="background:#647855"></span> Vigilancia</span>
+            <span class="ml-auto">Cartografía base: Esri</span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -445,8 +588,9 @@
         id: 'a5',
         region: 'Región del Biobío',
         agency: 'CONAF',
-        level: 'ALARMA',
-        event: 'Alerta Roja / Botón Rojo — Riesgo Extremo',
+        recordType: 'BOTON_ROJO',
+        level: 'AVISO',
+        event: 'Botón Rojo CONAF — Riesgo de incendios forestales',
         sector: 'Provincia de Arauco y sector cordillerano',
         comunas: ['Arauco', 'Cañete', 'Curanilahue', 'Lebu', 'Los Álamos', 'Tirúa'],
         detail: 'Humedad del combustible fino muerto < 6% con rachas de viento Puelche.',
@@ -480,23 +624,67 @@
       },
       {
         time: 'Ayer, 06:15 p. m.',
-        title: 'Nueva declaración de Alerta Roja • 6 comunas',
+        title: 'Registro de Botón Rojo CONAF • 6 comunas',
         detail: 'Biobío: Arauco, Cañete, Curanilahue, Lebu, Los Álamos, Tirúa',
-        level: 'ALARMA'
+        level: 'AVISO',
+        recordType: 'BOTON_ROJO'
       }
     ];
 
-    let alerts = JSON.parse(localStorage.getItem('kamila_alertas_v4')) || defaultAlerts;
-    let changelog = JSON.parse(localStorage.getItem('kamila_changelog_v4')) || defaultChangelog;
+    function readStorageJSON(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+      } catch (error) {
+        console.warn(`No se pudo leer ${key}; se utilizará la información inicial.`, error);
+        return fallback;
+      }
+    }
+    const CONAF_RED_BUTTON_URL = 'https://www.conaf.cl/incendios/situacion-actual-y-pronostico-de-incendios/';
+    // Capa pública FeatureServer consultada para automatizar la cobertura territorial Botón Rojo.
+    // El portal oficial de CONAF mantiene la explicación y la estadística diaria enlazada.
+    const CONAF_BOTON_ROJO_QUERY_URL = 'https://services5.arcgis.com/A1ELWse9bRAi2JiV/arcgis/rest/services/Boton_Rojo/FeatureServer/0/query';
+    const CONAF_SYNC_STATE_KEY = 'kamila_conaf_boton_rojo_sync_v1';
+    const CONAF_GEO_CACHE_KEY = 'kamila_conaf_boton_rojo_geo_v1';
+    const BOTON_ROJO_COLOR = '#D92D20';
+    function isConafRedButton(alert) {
+      return Boolean(alert && (alert.recordType === 'BOTON_ROJO' || (alert.agency === 'CONAF' && /bot[oó]n\s+rojo/i.test(alert.event || ''))));
+    }
+    // Migra el registro demostrativo antiguo, que mezclaba Botón Rojo con Alerta Roja.
+    let alerts = readStorageJSON('kamila_alertas_v4', defaultAlerts).map(alert => {
+      const migrated = { ...alert };
+      if (migrated.agency === 'CONAF' && /bot[oó]n\s+rojo/i.test(migrated.event || '')) migrated.recordType = 'BOTON_ROJO';
+      if (migrated.id === 'a5' && /^Alerta Roja\s*\/\s*Bot[oó]n Rojo/i.test(migrated.event || '')) {
+        migrated.event = 'Botón Rojo CONAF — Riesgo de incendios forestales';
+        migrated.level = 'AVISO';
+      }
+      return migrated;
+    });
+    let changelog = readStorageJSON('kamila_changelog_v4', defaultChangelog).map(item => {
+      const migrated = { ...item };
+      if (migrated.title === 'Nueva declaración de Alerta Roja • 6 comunas' && /^Biobío: Arauco, Cañete, Curanilahue/.test(migrated.detail || '')) {
+        migrated.title = 'Registro de Botón Rojo CONAF • 6 comunas';
+        migrated.level = 'AVISO';
+        migrated.recordType = 'BOTON_ROJO';
+      }
+      return migrated;
+    });
     let expandedRegions = new Set(['Región de Valparaíso', 'Región de Antofagasta']); // Regiones desplegadas inicialmente
     let selectedCommuneFilter = {}; // { [regNombre]: 'Calama' }
     let liveMeteoCache = {};
     let recentQuakes = [];
+    let conafBotonRojoFeatures = [];
+    let conafSyncState = { status: 'pending', lastAttemptAt: null, lastSuccessAt: null, featureCount: 0, communeCount: 0, unmappedCount: 0, message: 'Esperando primera consulta' };
+    let conafSyncInFlight = null;
+    conafSyncState = readStorageJSON(CONAF_SYNC_STATE_KEY, conafSyncState);
+    const cachedConafGeo = readStorageJSON(CONAF_GEO_CACHE_KEY, []);
+    conafBotonRojoFeatures = Array.isArray(cachedConafGeo) ? cachedConafGeo : [];
     let selectedSeverity = 'TODAS';
     let map = null;
     let regionsGeoLayer = null;
     let markersLayer = null;
     let quakesLayer = null;
+    let conafBotonRojoLayer = null;
     let currentBasemapLayer = null;
     let hasGeoJsonPolygons = false;
 
@@ -505,7 +693,7 @@
       ARMADA: { label: 'ARMADA / DIRECTEMAR', color: '#6BB2C4', icon: 'waves', officialUrl: 'https://meteoarmada.directemar.cl/' },
       SENAPRED: { label: 'SENAPRED', color: '#E9972C', icon: 'shield-alert', officialUrl: 'https://senapred.cl/alertas/' },
       SERNAGEOMIN: { label: 'SERNAGEOMIN', color: '#B8492C', icon: 'mountain-snow', officialUrl: 'https://www.sernageomin.cl/red-nacional-de-vigilancia-volcanica/' },
-      CONAF: { label: 'CONAF', color: '#647855', icon: 'flame', officialUrl: 'https://www.conaf.cl/incendios-forestales/prevencion/boton-rojo/' },
+      CONAF: { label: 'CONAF', color: '#647855', icon: 'flame', officialUrl: CONAF_RED_BUTTON_URL },
       SHOA: { label: 'SHOA', color: '#3892D0', icon: 'activity', officialUrl: 'http://www.snamchile.cl/' }
     };
 
@@ -516,6 +704,12 @@
       VERDE:  { label: 'VIGILANCIA', bg: '#647855', dot: '#22c55e', text: '#FFFFFF', weight: 1, emoji: String.fromCodePoint(0x1F7E2) }
     };
 
+    function escapeHTML(value) {
+      return String(value ?? '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[char]));
+    }
+
     function showToast(msg) {
       const t = document.getElementById('toastMsg');
       t.textContent = msg;
@@ -523,9 +717,9 @@
       setTimeout(() => t.classList.add('hidden'), 2400);
     }
 
-    function addLogEntry(title, detail, level = 'AVISO') {
+    function addLogEntry(title, detail, level = 'AVISO', recordType = 'GENERAL') {
       const now = new Date().toLocaleString('es-CL', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
-      changelog.unshift({ time: now, title, detail, level });
+      changelog.unshift({ time: now, title, detail, level, recordType });
       if (changelog.length > 30) changelog.pop();
       localStorage.setItem('kamila_changelog_v4', JSON.stringify(changelog));
       renderChangelog();
@@ -544,17 +738,17 @@
         return;
       }
       div.innerHTML = changelog.map(item => {
-        const dotColor = levelMeta[item.level] ? levelMeta[item.level].dot : '#38bdf8';
+        const dotColor = item.recordType === 'BOTON_ROJO' ? BOTON_ROJO_COLOR : (levelMeta[item.level] ? levelMeta[item.level].dot : '#38bdf8');
         return `
           <div class="p-2.5 rounded-xl bg-[#061E31]/80 border border-[#165685]/70">
             <div class="flex items-start justify-between gap-2">
               <div class="flex items-center gap-1.5 font-bold text-white">
                 <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${dotColor}"></span>
-                <span>${item.title}</span>
+                <span>${escapeHTML(item.title)}</span>
               </div>
             </div>
-            <span class="text-[10px] text-[#6BB2C4] block mt-0.5 ml-4">${item.time}</span>
-            <p class="text-[11px] text-[#B8D4E3] mt-1 ml-4 leading-snug">${item.detail}</p>
+            <span class="text-[10px] text-[#6BB2C4] block mt-0.5 ml-4">${escapeHTML(item.time)}</span>
+            <p class="text-[11px] text-[#B8D4E3] mt-1 ml-4 leading-snug">${escapeHTML(item.detail)}</p>
           </div>
         `;
       }).join('');
@@ -629,7 +823,7 @@
         return `
           <label class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#0B3F65] border border-[#165685] text-[11px] cursor-pointer hover:border-[#6BB2C4]">
             <input type="checkbox" name="modalComuna" value="${c}" ${checked} class="accent-[#E9972C]">
-            <span>${c}</span>
+            <span>${escapeHTML(c)}</span>
           </label>
         `;
       }).join('');
@@ -648,6 +842,14 @@
       changeBasemap();
       markersLayer = L.layerGroup().addTo(map);
       quakesLayer = L.layerGroup().addTo(map);
+      conafBotonRojoLayer = L.geoJSON(null, {
+        style: () => ({ color: BOTON_ROJO_COLOR, weight: 2, opacity: 0.95, fillColor: BOTON_ROJO_COLOR, fillOpacity: 0.22 }),
+        onEachFeature: (feature, layer) => {
+          const p = feature.properties || {};
+          const locationLabel = formatConafFeatureLocation(p);
+          layer.bindPopup(`<div style="min-width:210px;color:#102536"><strong style="color:${BOTON_ROJO_COLOR}">BOTÓN ROJO CONAF</strong><br><b>${escapeHTML(locationLabel)}</b><br><small>Área territorial publicada por la capa consultada; no representa superficie quemada.</small></div>`);
+        }
+      }).addTo(map);
       loadChilePolygons();
     }
 
@@ -670,7 +872,7 @@
               });
               layer.bindTooltip(() => {
                 const count = alerts.filter(a => a.region === matchedReg.nombre).length;
-                return `<strong>${matchedReg.id} - ${matchedReg.nombre}</strong><br>${count} alerta(s) • Clic para desplegar comunas`;
+                return `<strong>${matchedReg.id} - ${matchedReg.nombre}</strong><br>${count} aviso(s) o alerta(s) • Clic para desplegar comunas`;
               }, { sticky: true });
             }
           }
@@ -689,16 +891,25 @@
 
     function getRegionSeverityColor(regNombre) {
       const selAgency = document.getElementById('filterAgency').value;
-      const regAlerts = alerts.filter(a => a.region === regNombre && (selAgency === 'TODOS' || a.agency === selAgency));
+      const regAlerts = alerts.filter(a => {
+        const matchAgency = selAgency === 'TODOS' || (selAgency === 'CONAF_BOTON_ROJO' ? isConafRedButton(a) : a.agency === selAgency);
+        const matchType = selectedSeverity === 'TODAS' || (selectedSeverity === 'BOTON_ROJO' ? isConafRedButton(a) : (!isConafRedButton(a) && a.level === selectedSeverity));
+        return a.region === regNombre && matchAgency && matchType;
+      });
+      const standardAlerts = regAlerts.filter(a => !isConafRedButton(a));
       let maxWeight = 0;
       let color = '#647855';
-      regAlerts.forEach(a => {
-        if (levelMeta[a.level].weight > maxWeight) {
-          maxWeight = levelMeta[a.level].weight;
-          color = levelMeta[a.level].bg;
+      standardAlerts.forEach(a => {
+        const meta = levelMeta[a.level] || levelMeta.AVISO;
+        if (meta.weight > maxWeight) {
+          maxWeight = meta.weight;
+          color = meta.bg;
         }
       });
-      return { color, count: regAlerts.length };
+      const botonRojoCount = regAlerts.filter(isConafRedButton).length;
+      // La capa CONAF tiene color propio; solo cede ante una alerta amarilla o roja real.
+      if (maxWeight < 3 && botonRojoCount > 0) color = BOTON_ROJO_COLOR;
+      return { color, count: regAlerts.length, botonRojoCount };
     }
 
     function getRegionPolygonStyle(feature) {
@@ -734,17 +945,17 @@
 
       if (mode === 'esri_vector_key') {
         if (!apiKey) {
-          alert('Primero ingresa tu API Key de Esri haciendo clic en el botón 🔑.');
+          showToast('Configura primero tu API Key de Esri con el botón de clave.');
           document.getElementById('basemapSelect').value = 'esri_dark';
           return changeBasemap();
         }
         currentBasemapLayer = L.esri.Vector.vectorBasemapLayer('arcgis/dark-gray', { apikey: apiKey }).addTo(map);
       } else if (mode === 'esri_topo') {
-        currentBasemapLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16 }).addTo(map);
+        currentBasemapLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, crossOrigin: true }).addTo(map);
       } else if (mode === 'esri_sat') {
-        currentBasemapLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16 }).addTo(map);
+        currentBasemapLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, crossOrigin: true }).addTo(map);
       } else {
-        currentBasemapLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16 }).addTo(map);
+        currentBasemapLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', { maxZoom: 16, crossOrigin: true }).addTo(map);
       }
     }
 
@@ -759,7 +970,7 @@
       if (markersLayer) {
         markersLayer.clearLayers();
         REGIONES.forEach(reg => {
-          const { color, count } = getRegionSeverityColor(reg.nombre);
+          const { color, count, botonRojoCount } = getRegionSeverityColor(reg.nombre);
           const isSelected = selRegion === reg.nombre;
           const radius = hasGeoJsonPolygons ? (isSelected ? 7 : 4) : (isSelected ? 13 : (count > 0 ? 9 : 6));
 
@@ -771,7 +982,7 @@
             opacity: 1,
             fillOpacity: 0.9
           });
-          circle.bindTooltip(`<strong>${reg.id} - ${reg.nombre}</strong><br>${count} alerta(s) activa(s)`);
+          circle.bindTooltip(`<strong>${reg.id} - ${reg.nombre}</strong><br>${count} registro(s) activo(s)${botonRojoCount ? `<br><span style="color:${BOTON_ROJO_COLOR};font-weight:700">${botonRojoCount} Botón(es) Rojo CONAF</span>` : ''}`);
           circle.on('click', () => {
             document.getElementById('filterRegion').value = reg.nombre;
             expandedRegions.add(reg.nombre);
@@ -781,17 +992,30 @@
         });
       }
 
+      updateConafBotonRojoMap();
       const mapSub = document.getElementById('mapSubtitle');
-      if (selRegion === 'TODAS') {
-        map.setView([-35.6, -71.5], 4);
-        mapSub.textContent = 'Vista Nacional • Haz clic en una región';
-      } else {
-        const found = REGIONES.find(r => r.nombre === selRegion);
-        if (found) {
-          map.setView([found.lat, found.lon], 7);
-          mapSub.textContent = `Viendo: ${found.id} - ${found.nombre}`;
-        }
-      }
+      const selectedRegion = REGIONES.find(r => r.nombre === selRegion);
+      mapSub.textContent = selectedRegion
+        ? `Viendo: ${selectedRegion.id} - ${selectedRegion.nombre}`
+        : 'Vista nacional • Alertas oficiales y registros Botón Rojo CONAF';
+    }
+
+    function updateConafBotonRojoMap() {
+      if (!conafBotonRojoLayer) return;
+      conafBotonRojoLayer.clearLayers();
+      const agency = document.getElementById('filterAgency')?.value || 'TODOS';
+      const severityVisible = selectedSeverity === 'TODAS' || selectedSeverity === 'BOTON_ROJO';
+      const agencyVisible = agency === 'TODOS' || agency === 'CONAF' || agency === 'CONAF_BOTON_ROJO';
+      if (!severityVisible || !agencyVisible || !Array.isArray(conafBotonRojoFeatures) || !conafBotonRojoFeatures.length) return;
+      const selectedRegion = document.getElementById('filterRegion')?.value || 'TODAS';
+      const visible = conafBotonRojoFeatures.filter(feature => {
+        const regionName = feature.properties && feature.properties._monitorRegion;
+        return selectedRegion === 'TODAS' || !regionName || regionName === selectedRegion;
+      });
+      if (visible.length) conafBotonRojoLayer.addData({ type: 'FeatureCollection', features: visible });
+      if (regionsGeoLayer && regionsGeoLayer.bringToBack) regionsGeoLayer.bringToBack();
+      if (conafBotonRojoLayer.bringToFront) conafBotonRojoLayer.bringToFront();
+      if (markersLayer && markersLayer.bringToFront) markersLayer.bringToFront();
     }
 
     function updateQuakeMarkers() {
@@ -829,6 +1053,17 @@
       if (val !== 'TODAS') expandedRegions.add(val);
       renderDashboard();
       updateMapVisuals();
+      focusMainMapRegion(val);
+    }
+
+    function focusMainMapRegion(regionName) {
+      if (!map) return;
+      if (regionName === 'TODAS') {
+        map.setView([-35.6, -71.5], 4);
+        return;
+      }
+      const found = REGIONES.find(r => r.nombre === regionName);
+      if (found) map.setView([found.lat, found.lon], 7);
     }
 
     function resetMapSelection() {
@@ -845,40 +1080,491 @@
 
     async function fetchLiveAll() {
       const btn = document.getElementById('btnSyncAll');
-      btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Sincronizando...`;
+      btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Actualizando fuentes...`;
       lucide.createIcons();
 
-      try {
+      const meteoAndQuakes = (async () => {
         const lats = REGIONES.map(r => r.lat).join(',');
         const lons = REGIONES.map(r => r.lon).join(',');
         const meteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&current=temperature_2m,precipitation,wind_speed_10m,wind_gusts_10m&hourly=freezing_level_height&forecast_days=1&timezone=America%2FSantiago`;
-        const resMeteo = await fetch(meteoUrl);
-        const dataMeteo = await resMeteo.json();
+        const [resMeteo, dataQuake] = await Promise.all([
+          fetch(meteoUrl, { cache: 'no-store' }).then(res => { if (!res.ok) throw new Error(`Open-Meteo respondió ${res.status}`); return res.json(); }),
+          (async () => {
+            const startTime = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
+            const usgsUrl = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=${startTime}&minmagnitude=3.0&minlatitude=-56&maxlatitude=-17&minlongitude=-76&maxlongitude=-66`;
+            const res = await fetch(usgsUrl, { cache: 'no-store' });
+            if (!res.ok) throw new Error(`USGS respondió ${res.status}`);
+            return res.json();
+          })()
+        ]);
 
-        if (Array.isArray(dataMeteo)) {
-          dataMeteo.forEach((item, idx) => {
+        if (Array.isArray(resMeteo)) {
+          resMeteo.forEach((item, idx) => {
             const regName = REGIONES[idx].nombre;
             const iso0 = item.hourly && item.hourly.freezing_level_height ? Math.round(item.hourly.freezing_level_height[0]) : null;
-            liveMeteoCache[regName] = { ...item.current, iso0 };
+            liveMeteoCache[regName] = { ...(item.current || {}), iso0 };
           });
         }
-
-        const startTime = new Date(Date.now() - 48 * 3600 * 1000).toISOString();
-        const usgsUrl = `https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=${startTime}&minmagnitude=3.0&minlatitude=-56&maxlatitude=-17&minlongitude=-76&maxlongitude=-66`;
-        const resQuake = await fetch(usgsUrl);
-        const dataQuake = await resQuake.json();
         recentQuakes = dataQuake.features || [];
-
-        btn.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4"></i> Meteo + Sismos OK`;
         renderDashboard();
         updateQuakeMarkers();
-      } catch (e) {
-        btn.innerHTML = `<i data-lucide="alert-circle" class="w-4 h-4"></i> Error de red`;
+        return true;
+      })();
+
+      const conaf = fetchConafRedButton({ silent: true });
+      const results = await Promise.allSettled([meteoAndQuakes, conaf]);
+      const generalOk = results[0].status === 'fulfilled';
+      const conafOk = results[1].status === 'fulfilled' && results[1].value && results[1].value.ok;
+      if (generalOk && conafOk) {
+        btn.innerHTML = `<i data-lucide="check-circle" class="w-4 h-4"></i> Fuentes actualizadas`;
+      } else if (generalOk || conafOk) {
+        btn.innerHTML = `<i data-lucide="alert-circle" class="w-4 h-4"></i> Actualización parcial`;
+      } else {
+        btn.innerHTML = `<i data-lucide="alert-circle" class="w-4 h-4"></i> Error de conexión`;
       }
+      if (!generalOk) console.error('Falló la actualización de meteorología/sismos:', results[0].reason);
+      if (generalOk || conafOk) renderDashboard();
+      if (!generalOk && !conafOk) showToast('No se pudo actualizar ninguna fuente. Se conservan los últimos datos guardados.');
       lucide.createIcons();
     }
 
-    // Símbolos tipográficos universales (BMP) 100% inmunes a corrupción de codificación en WhatsApp Desktop Windows
+    function normalizeConafText(value) {
+      return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+        .replace(/\b(region|comuna|municipalidad|municipio|de|del|la|el)\b/g, ' ')
+        .replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ');
+    }
+
+    function normalizeConafFieldKey(value) {
+      return String(value ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    }
+
+    function conafFeatureProperties(feature) {
+      return (feature && (feature.properties || feature.attributes)) || {};
+    }
+
+    function conafFeatureGeometry(feature) {
+      if (!feature || !feature.geometry) return null;
+      const g = feature.geometry;
+      if (g.type && Array.isArray(g.coordinates)) return g;
+      if (Array.isArray(g.rings)) return { type: 'Polygon', coordinates: g.rings };
+      if (Array.isArray(g.paths)) return { type: 'MultiLineString', coordinates: g.paths };
+      if (Number.isFinite(g.x) && Number.isFinite(g.y)) return { type: 'Point', coordinates: [g.x, g.y] };
+      if (Array.isArray(g.points)) return { type: 'MultiPoint', coordinates: g.points };
+      return null;
+    }
+
+    const CONAF_COMMUNE_LOOKUP = (() => {
+      const lookup = new Map();
+      REGIONES.forEach(region => region.comunas.forEach(commune => {
+        lookup.set(normalizeConafText(commune), { commune, region: region.nombre });
+      }));
+      return lookup;
+    })();
+
+    function findConafCommunes(properties) {
+      const entries = Object.entries(properties || {});
+      const priority = entries.filter(([key]) => {
+        const k = normalizeConafFieldKey(key);
+        return k.includes('comuna') || k.includes('nomcom') || k.includes('municipio') || k.includes('municipality');
+      });
+      const fallbackText = entries.filter(([key, value]) => {
+        const field = normalizeConafFieldKey(key);
+        return typeof value === 'string' && !isConafCoordinateValue(value, key) && !/(provincia|nomprov|nombreprov|localidad|poblado|asentamiento|toponimo|nomlocal|nombrelocal)/.test(field);
+      });
+      const sources = [...priority, ...fallbackText.filter(([key]) => !priority.some(([priorityKey]) => priorityKey === key))];
+      const found = new Map();
+      for (const [, raw] of sources) {
+        const values = Array.isArray(raw) ? raw : [raw];
+        for (const value of values) {
+          const norm = normalizeConafText(value);
+          if (!norm) continue;
+          if (CONAF_COMMUNE_LOOKUP.has(norm)) {
+            const item = CONAF_COMMUNE_LOOKUP.get(norm);
+            found.set(item.commune, item);
+            continue;
+          }
+          // Respaldo para atributos de texto que concatenan varias comunas.
+          for (const [known, item] of CONAF_COMMUNE_LOOKUP.entries()) {
+            if (norm === known || (` ${norm} `).includes(` ${known} `)) found.set(item.commune, item);
+          }
+        }
+      }
+      return [...found.values()];
+    }
+
+    function findConafRegion(properties) {
+      const entries = Object.entries(properties || {});
+      const candidates = entries.filter(([key]) => /region|codreg|nomreg/.test(normalizeConafFieldKey(key)));
+      for (const [, raw] of candidates) {
+        const value = normalizeConafText(raw);
+        if (!value) continue;
+        const regionCodes = { '15': 'XV', '1': 'I', '2': 'II', '3': 'III', '4': 'IV', '5': 'V', '13': 'RM', '6': 'VI', '7': 'VII', '16': 'XVI', '8': 'VIII', '9': 'IX', '14': 'XIV', '10': 'X', '11': 'XI', '12': 'XII' };
+        const compact = value.replace(/\s/g, '').replace(/^0+/, '');
+        const codeMatch = REGIONES.find(region => region.id === regionCodes[compact]);
+        if (codeMatch) return codeMatch.nombre;
+        const found = REGIONES.find(region => {
+          const names = [region.nombre, region.id, ...(region.matchKeys || [])].map(normalizeConafText).filter(Boolean);
+          return names.some(name => value === name || (` ${value} `).includes(` ${name} `));
+        });
+        if (found) return found.nombre;
+      }
+      return null;
+    }
+
+    function readConafSourceDate(properties) {
+      const entry = Object.entries(properties || {}).find(([key]) => {
+        const k = normalizeConafText(key).replace(/\s/g, '');
+        return /fecha|vigencia|actualiz|timestamp|date|periodo/.test(k);
+      });
+      if (!entry) return null;
+      const raw = entry[1];
+      if (raw === null || raw === undefined || raw === '') return null;
+      let date;
+      if (typeof raw === 'number' || /^\d{10,13}$/.test(String(raw))) {
+        const n = Number(raw);
+        date = new Date(n < 1e12 ? n * 1000 : n);
+      } else {
+        date = new Date(raw);
+      }
+      return Number.isNaN(date.getTime()) ? String(raw) : date.toLocaleString('es-CL');
+    }
+
+    // Evita mostrar coordenadas, identificadores y campos geométricos como si fueran topónimos.
+    function isConafCoordinateValue(value, fieldName = '') {
+      const key = normalizeConafText(fieldName).replace(/\s/g, '');
+      if (/(lat|latitude|latitud|lon|lng|long|longitude|longitud|coord|coordenad|utm|este|norte|shape|geom|objectid|globalid|fid|oid)/.test(key) || /^(x|y)$/.test(key) || /geometry|spatialreference|shapearea|shapelength/.test(key)) return true;
+      if (typeof value === 'number' || Array.isArray(value) || (value && typeof value === 'object')) return true;
+      const text = String(value ?? '').trim();
+      if (!text) return true;
+      if (/\b(point|multipoint|linestring|polygon|coordinates?)\s*[:(]/i.test(text)) return true;
+      if (/\b(lat|latitude|latitud|lon|lng|longitude|longitud|coordenadas?|utm)\b/i.test(text) && (text.match(/[+-]?\d+(?:\.\d+)?/g) || []).length >= 1) return true;
+      const numericPair = text.replace(/[\[\]()]/g, '').trim();
+      if (/^[+-]?\d+(?:[.,]\d+)?(?:\s*[,;|\s]\s*[+-]?\d+(?:[.,]\d+)?){1,2}$/.test(numericPair)) return true;
+      return false;
+    }
+
+    function cleanConafPlaceValue(value, fieldName = '') {
+      if (isConafCoordinateValue(value, fieldName)) return '';
+      let text = String(value ?? '').replace(/\s+/g, ' ').trim();
+      if (!text || text.length > 110 || /^[-+\d.,;|\s]+$/.test(text)) return '';
+      // Si el atributo mezcla un nombre con coordenadas, conserva el topónimo y descarta el par numérico.
+      text = text.replace(/\(?\s*[+-]?\d{1,3}(?:\.\d+)?\s*[,;|]\s*[+-]?\d{1,3}(?:\.\d+)?\s*\)?/g, ' ');
+      text = text.replace(/\b(?:lat|latitude|latitud|lon|lng|longitude|longitud|coordenadas?)\s*[:=]?\s*/gi, ' ');
+      text = text.replace(/[\s,;|]+/g, ' ').trim();
+      if (!text || /^[-+\d.\s]+$/.test(text)) return '';
+      return text.replace(/^\s*(?:sector|localidad|provincia|comuna)\s*[:=-]\s*/i, '').trim();
+    }
+
+    function extractConafNamedPlaces(properties) {
+      const result = { localities: new Set(), provinces: new Set(), sectors: new Set() };
+      for (const [key, raw] of Object.entries(properties || {})) {
+        const normalizedKey = normalizeConafText(key).replace(/\s/g, '');
+        let target = null;
+        if (/provincia|nomprov|nombreprov/.test(normalizedKey)) target = result.provinces;
+        else if (/localidad|poblado|asentamiento|toponimo|lugar|localizacion|nomlocal|nombrelocal|nompob|nomlugar/.test(normalizedKey)) target = result.localities;
+        else if (/sector|zona|nombrearea|areanombre|nomarea|nomsector|nombresector/.test(normalizedKey) || normalizedKey === 'area') target = result.sectors;
+        if (!target) continue;
+        const values = Array.isArray(raw) ? raw : [raw];
+        values.forEach(value => {
+          const clean = cleanConafPlaceValue(value, key);
+          if (clean) target.add(clean);
+        });
+      }
+      return {
+        localities: [...result.localities],
+        provinces: [...result.provinces],
+        sectors: [...result.sectors]
+      };
+    }
+
+    function formatConafLocationParts({ communes = [], localities = [], provinces = [], sectors = [], regionName = '' } = {}) {
+      const parts = [];
+      const unique = values => [...new Set((values || []).map(v => String(v || '').trim()).filter(Boolean))];
+      const communeNames = unique(communes);
+      const communeKeys = new Set(communeNames.map(normalizeConafText));
+      const localityNames = unique(localities).filter(name => !communeKeys.has(normalizeConafText(name)));
+      const localityKeys = new Set(localityNames.map(normalizeConafText));
+      const provinceNames = unique(provinces).filter(name => !communeKeys.has(normalizeConafText(name)));
+      const sectorNames = unique(sectors).filter(name => !communeKeys.has(normalizeConafText(name)) && !localityKeys.has(normalizeConafText(name)));
+      if (localityNames.length) parts.push(`Localidades: ${localityNames.join(', ')}`);
+      if (sectorNames.length) parts.push(`Sectores: ${sectorNames.join(', ')}`);
+      if (provinceNames.length) parts.push(`${provinceNames.length > 1 ? 'Provincias' : 'Provincia'}: ${provinceNames.join(', ')}`);
+      if (communeNames.length) parts.push(`Comunas: ${communeNames.join(', ')}`);
+      if (regionName) parts.push(regionName);
+      return parts.join(' · ');
+    }
+
+    function formatConafAlertLocation(alert) {
+      if (!isConafRedButton(alert)) return String(alert && alert.sector || 'Ubicación no especificada');
+      const communes = alert.comunas || [];
+      const localities = alert.localidades || [];
+      const provinces = alert.provincias || [];
+      const sectors = alert.sectores || [];
+      const hasNamedTerritory = communes.length || localities.length || provinces.length || sectors.length;
+      const fallback = !hasNamedTerritory ? cleanConafPlaceValue(alert && alert.sector, 'sector') : '';
+      const parts = formatConafLocationParts({
+        communes,
+        localities,
+        provinces,
+        sectors: fallback ? [fallback] : sectors,
+        regionName: alert.region || ''
+      });
+      return parts || `Cobertura territorial reportada en ${alert.region || 'región no identificada'}`;
+    }
+
+    function formatConafFeatureLocation(properties = {}) {
+      const p = properties || {};
+      if (p._monitorLocationLabel) return String(p._monitorLocationLabel);
+      const communes = Array.isArray(p._monitorCommunes) ? p._monitorCommunes : (p._monitorCommunes ? [p._monitorCommunes] : []);
+      const places = extractConafNamedPlaces(p);
+      const regionName = p._monitorRegion || findConafRegion(p) || '';
+      return formatConafLocationParts({
+        communes,
+        localities: p._monitorLocalities || places.localities,
+        provinces: p._monitorProvinces || places.provinces,
+        sectors: p._monitorSectors || places.sectors,
+        regionName
+      }) || `Cobertura territorial reportada en ${regionName || 'zona no identificada'}`;
+    }
+
+    async function queryConafFeaturePage(offset, format) {
+      const url = new URL(CONAF_BOTON_ROJO_QUERY_URL);
+      url.searchParams.set('where', '1=1');
+      url.searchParams.set('outFields', '*');
+      url.searchParams.set('returnGeometry', 'true');
+      url.searchParams.set('outSR', '4326');
+      url.searchParams.set('resultOffset', String(offset));
+      url.searchParams.set('resultRecordCount', '1000');
+      url.searchParams.set('f', format);
+      const response = await fetch(url.toString(), { cache: 'no-store' });
+      if (!response.ok) throw new Error(`ArcGIS CONAF respondió ${response.status}`);
+      const data = await response.json();
+      if (data && data.error) throw new Error(data.error.message || 'ArcGIS informó un error de consulta');
+      if (!data || !Array.isArray(data.features)) throw new Error('La capa CONAF no devolvió una colección de entidades reconocible');
+      return data;
+    }
+
+    async function queryAllConafFeatures() {
+      let format = 'geojson';
+      let firstPage;
+      try {
+        firstPage = await queryConafFeaturePage(0, format);
+      } catch (geoError) {
+        format = 'json';
+        firstPage = await queryConafFeaturePage(0, format);
+      }
+      const features = [...firstPage.features];
+      let offset = features.length;
+      let page = firstPage;
+      let safety = 0;
+      while ((page.exceededTransferLimit === true || page.features.length === 1000) && safety < 10) {
+        page = await queryConafFeaturePage(offset, format);
+        features.push(...page.features);
+        offset += page.features.length;
+        safety++;
+        if (!page.features.length) break;
+      }
+      return features.map((feature, index) => {
+        const properties = conafFeatureProperties(feature);
+        const geometry = conafFeatureGeometry(feature);
+        const objectIdEntry = Object.entries(properties).find(([key]) => /^(objectid|fid|oid|id)$/i.test(key));
+        const sourceId = feature.id ?? (objectIdEntry ? objectIdEntry[1] : `${index}_${JSON.stringify(properties).slice(0, 40)}`);
+        return {
+          type: 'Feature',
+          id: sourceId,
+          geometry,
+          properties: { ...properties, _monitorSourceId: String(sourceId) }
+        };
+      });
+    }
+
+    function buildConafMonitorRecords(features, syncAt) {
+      const groups = new Map();
+      let unmappedCount = 0;
+      const mappedGeoFeatures = [];
+      features.forEach((feature, index) => {
+        const properties = feature.properties || {};
+        const communeMatches = findConafCommunes(properties);
+        const explicitRegion = findConafRegion(properties);
+        const byRegion = new Map();
+        communeMatches.forEach(item => {
+          if (!byRegion.has(item.region)) byRegion.set(item.region, new Set());
+          byRegion.get(item.region).add(item.commune);
+        });
+        if (!byRegion.size && explicitRegion) byRegion.set(explicitRegion, new Set());
+        if (!byRegion.size) {
+          unmappedCount++;
+          return;
+        }
+
+        const sourceDate = readConafSourceDate(properties);
+        for (const [regionName, communesSet] of byRegion.entries()) {
+          const region = REGIONES.find(r => r.nombre === regionName);
+          const communes = [...communesSet].sort((a, b) => a.localeCompare(b, 'es'));
+          if (!groups.has(regionName)) groups.set(regionName, { communes: new Set(), ids: new Set(), sourceDates: new Set(), sectors: new Set(), localities: new Set(), provinces: new Set() });
+          const group = groups.get(regionName);
+          const namedPlaces = extractConafNamedPlaces(properties);
+          communes.forEach(commune => group.communes.add(commune));
+          namedPlaces.sectors.forEach(value => group.sectors.add(value));
+          namedPlaces.localities.forEach(value => group.localities.add(value));
+          namedPlaces.provinces.forEach(value => group.provinces.add(value));
+          group.ids.add(String(properties._monitorSourceId ?? feature.id ?? index));
+          if (sourceDate) group.sourceDates.add(sourceDate);
+
+          if (feature.geometry) {
+            mappedGeoFeatures.push({
+              type: 'Feature',
+              id: feature.id,
+              geometry: feature.geometry,
+              properties: {
+                ...properties,
+                _monitorRegion: regionName,
+                _monitorCommunes: communes,
+                _monitorLocalities: namedPlaces.localities,
+                _monitorProvinces: namedPlaces.provinces,
+                _monitorSectors: namedPlaces.sectors,
+                _monitorLocationLabel: formatConafLocationParts({ communes, localities: namedPlaces.localities, provinces: namedPlaces.provinces, sectors: namedPlaces.sectors, regionName }),
+                _monitorSource: 'CONAF / GEPRIF',
+                _monitorType: 'BOTON_ROJO',
+                _monitorSourceId: String(properties._monitorSourceId ?? feature.id ?? index),
+                _monitorSourceDate: sourceDate || null
+              }
+            });
+          }
+        }
+      });
+
+      const records = [...groups.entries()].map(([regionName, group]) => {
+        const region = REGIONES.find(r => r.nombre === regionName);
+        const communes = [...group.communes].sort((a, b) => a.localeCompare(b, 'es'));
+        const localities = [...group.localities].sort((a, b) => a.localeCompare(b, 'es'));
+        const provinces = [...group.provinces].sort((a, b) => a.localeCompare(b, 'es'));
+        const sectors = [...group.sectors].sort((a, b) => a.localeCompare(b, 'es'));
+        const countText = communes.length ? `${communes.length} comuna(s)` : 'cobertura regional';
+        const dateText = [...group.sourceDates].join('; ');
+        const sectorText = sectors.length ? `Sectores: ${sectors.join(', ')}` : (localities.length ? `Localidades: ${localities.join(', ')}` : (communes.length ? `Cobertura comunal: ${communes.join(', ')}` : `Cobertura territorial en ${regionName}`));
+        return {
+          id: `conaf_auto_${normalizeConafText(regionName).replace(/\s+/g, '_')}`,
+          agency: 'CONAF',
+          recordType: 'BOTON_ROJO',
+          isConafSynced: true,
+          level: 'AVISO',
+          event: `Botón Rojo CONAF — ${countText}`,
+          region: regionName,
+          sector: sectorText,
+          comunas: communes,
+          localidades: localities,
+          provincias: provinces,
+          sectores: sectors,
+          locationLabel: formatConafLocationParts({ communes, localities, provinces, sectors, regionName }),
+          detail: `Registro sincronizado automáticamente desde la capa territorial pública atribuida a GEPRIF/CONAF. ${dateText ? `Fecha consignada en los atributos de la fuente: ${dateText}. ` : ''}La ubicación se expresa mediante nombres territoriales reconocibles cuando la fuente los proporciona; las coordenadas se conservan solo para la geometría cartográfica. La cobertura no representa superficie quemada.`,
+          updated: dateText ? `CONAF · ${dateText}` : `Consulta ${new Date(syncAt).toLocaleString('es-CL')}`,
+          sourceDate: dateText || null,
+          syncedAt: syncAt,
+          sourceObjectIds: [...group.ids],
+          officialUrl: CONAF_RED_BUTTON_URL
+        };
+      });
+      return { records, geoFeatures: mappedGeoFeatures, unmappedCount };
+    }
+
+    function updateConafSyncStatus() {
+      const el = document.getElementById('conafSyncStatus');
+      if (!el) return;
+      const state = conafSyncState || {};
+      const time = state.lastSuccessAt ? new Date(state.lastSuccessAt).toLocaleString('es-CL', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : null;
+      let color = '#94a3b8';
+      let label = 'CONAF: esperando primera consulta';
+      if (state.status === 'loading') { color = '#E9972C'; label = 'CONAF: sincronizando capa territorial…'; }
+      else if (state.status === 'success') {
+        color = '#22c55e';
+        label = `CONAF: ${state.communeCount || 0} comunas · consulta ${time || 'reciente'}`;
+        if (state.unmappedCount) label += ` · ${state.unmappedCount} entidad(es) sin asociación comunal`;
+      } else if (state.status === 'error') {
+        color = '#f59e0b';
+        label = `CONAF: fuente no disponible · ${time ? `último respaldo ${time}` : 'sin respaldo previo'}`;
+      }
+      const ageNote = state.lastSuccessAt && state.status === 'error' ? ` (${state.message || 'consulta fallida'})` : '';
+      el.innerHTML = `<span class="status-dot" style="background:${color}"></span>${escapeHTML(label + ageNote)}`;
+      const btn = document.getElementById('btnSyncConaf');
+      if (btn && state.status !== 'loading') btn.innerHTML = `<i data-lucide="flame" class="w-4 h-4"></i> Sincronizar CONAF`;
+      if (window.lucide && lucide.createIcons) lucide.createIcons();
+    }
+
+    async function fetchConafRedButton(options = {}) {
+      if (conafSyncInFlight) return conafSyncInFlight;
+      conafSyncInFlight = (async () => {
+        const btn = document.getElementById('btnSyncConaf');
+        if (btn) btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> CONAF…`;
+        conafSyncState.status = 'loading';
+        conafSyncState.lastAttemptAt = new Date().toISOString();
+        updateConafSyncStatus();
+        try {
+          const rawFeatures = await queryAllConafFeatures();
+          const now = new Date().toISOString();
+          const built = buildConafMonitorRecords(rawFeatures, now);
+          if (rawFeatures.length > 0 && built.records.length === 0) {
+            throw new Error('La capa respondió, pero no fue posible asociar sus entidades a comunas o regiones conocidas. Se conserva el último respaldo.');
+          }
+
+          const previousAuto = alerts.filter(alert => alert.isConafSynced);
+          const previousSignature = JSON.stringify(previousAuto.map(alert => ({ region: alert.region, comunas: alert.comunas, ids: alert.sourceObjectIds })).sort((a, b) => a.region.localeCompare(b.region)));
+          const nextSignature = JSON.stringify(built.records.map(alert => ({ region: alert.region, comunas: alert.comunas, ids: alert.sourceObjectIds })).sort((a, b) => a.region.localeCompare(b.region)));
+
+          // Quita el registro de demostración histórico, conserva los registros manuales del usuario.
+          alerts = alerts.filter(alert => !(alert.id === 'a5' && isConafRedButton(alert)) && !alert.isConafSynced);
+          alerts.push(...built.records);
+          saveAlerts();
+          conafBotonRojoFeatures = built.geoFeatures;
+          try {
+            const geoJsonSize = JSON.stringify(conafBotonRojoFeatures).length;
+            if (geoJsonSize < 1800000) localStorage.setItem(CONAF_GEO_CACHE_KEY, JSON.stringify(conafBotonRojoFeatures));
+            else localStorage.removeItem(CONAF_GEO_CACHE_KEY);
+          } catch (storageError) {
+            console.warn('La geometría CONAF no pudo guardarse en caché local:', storageError);
+          }
+
+          conafSyncState = {
+            status: 'success', lastAttemptAt: now, lastSuccessAt: now,
+            featureCount: rawFeatures.length,
+            communeCount: new Set(built.records.flatMap(alert => alert.comunas || [])).size,
+            recordCount: built.records.length,
+            unmappedCount: built.unmappedCount,
+            message: rawFeatures.length ? 'Capa consultada correctamente' : 'La capa no devolvió entidades activas'
+          };
+          localStorage.setItem(CONAF_SYNC_STATE_KEY, JSON.stringify(conafSyncState));
+          updateConafSyncStatus();
+          updateMapVisuals();
+          renderDashboard();
+
+          if (previousSignature !== nextSignature) {
+            const totalCommunes = conafSyncState.communeCount;
+            addLogEntry('Actualización automática del Botón Rojo CONAF', `${totalCommunes} comuna(s) informadas en ${built.records.length} región(es). Fuente: capa territorial ArcGIS atribuida a GEPRIF/CONAF.`, 'AVISO');
+          }
+          if (!options.silent) showToast(`Botón Rojo CONAF sincronizado: ${conafSyncState.communeCount} comuna(s).`);
+          return { ok: true, count: conafSyncState.communeCount, features: rawFeatures.length };
+        } catch (error) {
+          console.error('No se pudo sincronizar el Botón Rojo CONAF:', error);
+          conafSyncState = {
+            ...conafSyncState,
+            status: 'error',
+            lastAttemptAt: new Date().toISOString(),
+            message: error && error.message ? error.message : 'Error de consulta'
+          };
+          try { localStorage.setItem(CONAF_SYNC_STATE_KEY, JSON.stringify(conafSyncState)); } catch (_) {}
+          updateConafSyncStatus();
+          if (!options.silent) showToast('No fue posible consultar la capa CONAF. Se conservan los últimos datos disponibles.');
+          return { ok: false, error: conafSyncState.message };
+        } finally {
+          conafSyncInFlight = null;
+          if (btn) btn.innerHTML = `<i data-lucide="flame" class="w-4 h-4"></i> Sincronizar CONAF`;
+          if (window.lucide && lucide.createIcons) lucide.createIcons();
+        }
+      })();
+      return conafSyncInFlight;
+    }
+
+    // Símbolos tipográficos universales para mantener una presentación consistente en WhatsApp.
     const WA_ICONS = {
       radar: '\u25C9',   // ◉
       pin: '\u25B8',     // ▸
@@ -896,26 +1582,30 @@
     function formatSingleAlertWhatsApp(al) {
       const regObj = REGIONES.find(r => r.nombre === al.region);
       const regCode = regObj ? regObj.id : '';
-      const lv = levelMeta[al.level];
+      const lv = levelMeta[al.level] || levelMeta.AVISO;
       const ag = agencyMeta[al.agency] || { label: al.agency, officialUrl: '' };
       const url = al.officialUrl || ag.officialUrl;
+      const isRedButton = isConafRedButton(al);
+      const classification = isRedButton ? 'BOTÓN ROJO CONAF' : lv.label;
+      const locationLabel = isRedButton ? 'Ubicación' : 'Sector';
+      const locationText = isRedButton ? formatConafAlertLocation(al) : al.sector;
 
-      let lines = [
-        `${lv.emoji} *${lv.label} \u2022 ${al.agency}*`,
+      const lines = [
+        `${lv.emoji} *${classification} • ${ag.label}*`,
         `━━━━━━━━━━━━━━`,
-        `${WA_ICONS.pin} *Regi\u00F3n:* [${regCode}] ${al.region}`,
+        `${WA_ICONS.pin} *Región:* [${regCode}] ${al.region}`,
         `${WA_ICONS.warn} *Evento:* ${al.event}`
       ];
       if (al.comunas && al.comunas.length > 0) {
         lines.push(`${WA_ICONS.town} *Comunas:* ${al.comunas.join(', ')}`);
       }
-      lines.push(`${WA_ICONS.map} *Sector:* ${al.sector}`);
+      lines.push(`${WA_ICONS.map} *${locationLabel}:* ${locationText}`);
       lines.push('');
-      lines.push(`${WA_ICONS.note} *Detalle t\u00E9cnico:*`);
+      lines.push(`${WA_ICONS.note} *Detalle técnico:*`);
       lines.push(`${al.detail}`);
       lines.push('');
-      lines.push(`${WA_ICONS.link} *Bolet\u00EDn oficial:* ${url}`);
-      lines.push(`_Reporte: Kamila Guerrero (Ge\u00F3loga)_`);
+      lines.push(`${WA_ICONS.link} *Boletín oficial:* ${url || 'No especificado'}`);
+      lines.push(`_Reporte: Kamila Guerrero (Geóloga)_`);
       return lines.join('\n');
     }
 
@@ -923,16 +1613,23 @@
       const al = alerts.find(a => a.id === id);
       if (!al) return;
       const msg = formatSingleAlertWhatsApp(al);
-      navigator.clipboard.writeText(msg).catch(() => {});
-      showToast('Abriendo WhatsApp (también copiado al portapapeles)');
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+      try { navigator.clipboard?.writeText?.(msg)?.catch(() => {}); } catch (_) {}
+      showToast('Abriendo WhatsApp (también se intentó copiar el texto)');
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank', 'noopener');
     }
 
-    function copySingleAlert(id) {
+    async function copySingleAlert(id) {
       const al = alerts.find(a => a.id === id);
       if (!al) return;
-      navigator.clipboard.writeText(formatSingleAlertWhatsApp(al));
-      showToast('Aviso copiado listo para pegar en WhatsApp');
+      const text = formatSingleAlertWhatsApp(al);
+      try {
+        await navigator.clipboard.writeText(text);
+        showToast('Aviso copiado listo para pegar en WhatsApp');
+      } catch (error) {
+        const helper = document.createElement('textarea');
+        helper.value = text; document.body.appendChild(helper); helper.select();
+        document.execCommand('copy'); helper.remove(); showToast('Aviso copiado listo para pegar en WhatsApp');
+      }
     }
 
     function shareRegionWhatsApp(regNombre, event) {
@@ -940,11 +1637,11 @@
       const regObj = REGIONES.find(r => r.nombre === regNombre);
       const regAlerts = alerts
         .filter(a => a.region === regNombre)
-        .sort((a, b) => levelMeta[b.level].weight - levelMeta[a.level].weight);
-      if (regAlerts.length === 0) return;
+        .sort((a, b) => (levelMeta[b.level]?.weight || 0) - (levelMeta[a.level]?.weight || 0));
+      if (!regObj || regAlerts.length === 0) return;
 
       const now = new Date().toLocaleString('es-CL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-      let lines = [
+      const lines = [
         `${WA_ICONS.radar} *REPORTE REGIONAL DE ALERTAS*`,
         `${WA_ICONS.pin} *[${regObj.id}] ${regObj.nombre.toUpperCase()}*`,
         `${WA_ICONS.clock} _Actualizado: ${now}_`
@@ -957,38 +1654,43 @@
       lines.push('━━━━━━━━━━━━━━\n');
 
       regAlerts.forEach((al, idx) => {
-        const lv = levelMeta[al.level];
-        lines.push(`${lv.emoji} *${idx + 1}. [${al.agency}] ${al.event}*`);
-        lines.push(`   \u25AA *Nivel:* ${lv.label}`);
+        const lv = levelMeta[al.level] || levelMeta.AVISO;
+        const ag = agencyMeta[al.agency] || { label: al.agency };
+        const isRedButton = isConafRedButton(al);
+        const classification = isRedButton ? 'BOTÓN ROJO CONAF' : lv.label;
+        const locationLabel = isRedButton ? 'Ubicación' : 'Sector';
+        const locationText = isRedButton ? formatConafAlertLocation(al) : al.sector;
+        lines.push(`${lv.emoji} *${idx + 1}. [${ag.label}] ${al.event}*`);
+        lines.push(`   ${WA_ICONS.town} *Nivel:* ${classification}`);
         if (al.comunas && al.comunas.length > 0) {
-          lines.push(`   \u25AA *Comunas:* ${al.comunas.join(', ')}`);
+          lines.push(`   ${WA_ICONS.town} *Comunas:* ${al.comunas.join(', ')}`);
         }
-        lines.push(`   \u25AA *Sector:* ${al.sector}`);
-        lines.push(`   \u25AA *Detalle:* ${al.detail}\n`);
+        lines.push(`   ${WA_ICONS.map} *${locationLabel}:* ${locationText}`);
+        if (!isRedButton) lines.push(`   ${WA_ICONS.note} *Detalle:* ${al.detail}\n`);
       });
 
       lines.push('━━━━━━━━━━━━━━');
-      lines.push('_Consolidado por Kamila Guerrero \u2022 Ge\u00F3loga_');
+      lines.push('_Consolidado por Kamila Guerrero • Geóloga_');
 
       const msg = lines.join('\n');
-      navigator.clipboard.writeText(msg).catch(() => {});
-      showToast('Abriendo WhatsApp (también copiado al portapapeles)');
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank');
+      try { navigator.clipboard?.writeText?.(msg)?.catch(() => {}); } catch (_) {}
+      showToast('Abriendo WhatsApp (también se intentó copiar el texto)');
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(msg)}`, '_blank', 'noopener');
     }
 
     function shareNationalWhatsApp() {
       generateReportText('whatsapp');
       const text = document.getElementById('reportText').value;
-      navigator.clipboard.writeText(text).catch(() => {});
-      showToast('Abriendo WhatsApp (también copiado al portapapeles)');
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+      try { navigator.clipboard?.writeText?.(text)?.catch(() => {}); } catch (_) {}
+      showToast('Abriendo WhatsApp (también se intentó copiar el texto)');
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
     }
 
     // Calcular nivel más alto de cada comuna dentro de una región
     function getCommuneStatusMap(regObj, regAlerts) {
       const statusMap = {};
       regObj.comunas.forEach(c => {
-        statusMap[c] = { weight: 0, dot: levelMeta.VERDE.dot, label: 'Sin alertas', alerts: [] };
+          statusMap[c] = { weight: 0, dot: levelMeta.VERDE.dot, label: 'Sin avisos registrados', alerts: [] };
       });
 
       regAlerts.forEach(al => {
@@ -996,10 +1698,12 @@
         targetComunas.forEach(c => {
           if (statusMap[c]) {
             statusMap[c].alerts.push(al);
-            if (levelMeta[al.level].weight > statusMap[c].weight) {
-              statusMap[c].weight = levelMeta[al.level].weight;
-              statusMap[c].dot = levelMeta[al.level].dot;
-              statusMap[c].label = levelMeta[al.level].label;
+            const meta = levelMeta[al.level] || levelMeta.AVISO;
+            const itemWeight = isConafRedButton(al) ? 2 : meta.weight;
+            if (itemWeight > statusMap[c].weight || (itemWeight === statusMap[c].weight && isConafRedButton(al))) {
+              statusMap[c].weight = itemWeight;
+              statusMap[c].dot = isConafRedButton(al) ? BOTON_ROJO_COLOR : meta.dot;
+              statusMap[c].label = isConafRedButton(al) ? 'Botón Rojo CONAF' : meta.label;
             }
           }
         });
@@ -1014,22 +1718,24 @@
 
       const filteredAlerts = alerts.filter(a => {
         const matchReg = selRegion === 'TODAS' || a.region === selRegion;
-        const matchAg = selAgency === 'TODOS' || a.agency === selAgency;
-        const matchSev = selectedSeverity === 'TODAS' || a.level === selectedSeverity;
+        const matchAg = selAgency === 'TODOS' || (selAgency === 'CONAF_BOTON_ROJO' ? isConafRedButton(a) : a.agency === selAgency);
+        const matchSev = selectedSeverity === 'TODAS' || (selectedSeverity === 'BOTON_ROJO' ? isConafRedButton(a) : (!isConafRedButton(a) && a.level === selectedSeverity));
         const comunasText = (a.comunas || []).join(' ');
-        const matchQ = !searchQ || (a.event + ' ' + a.sector + ' ' + a.detail + ' ' + a.region + ' ' + a.agency + ' ' + comunasText).toLowerCase().includes(searchQ);
+        const searchLocation = isConafRedButton(a) ? formatConafAlertLocation(a) : (a.sector || '');
+        const matchQ = !searchQ || (a.event + ' ' + searchLocation + ' ' + a.detail + ' ' + a.region + ' ' + a.agency + ' ' + comunasText).toLowerCase().includes(searchQ);
         return matchReg && matchAg && matchSev && matchQ;
       });
 
       const countAlarma = filteredAlerts.filter(a => a.level === 'ALARMA').length;
       const countAlerta = filteredAlerts.filter(a => a.level === 'ALERTA').length;
-      const countAviso = filteredAlerts.filter(a => a.level === 'AVISO').length;
+      const countAviso = filteredAlerts.filter(a => a.level === 'AVISO' && !isConafRedButton(a)).length;
+      const countBotonRojo = filteredAlerts.filter(isConafRedButton).length;
       const comunasEnAlertaSet = new Set();
       filteredAlerts.forEach(a => (a.comunas || []).forEach(c => comunasEnAlertaSet.add(c)));
 
       document.getElementById('kpiRow').innerHTML = `
         <div class="bg-[#0B3F65] border border-[#165685] rounded-xl p-3">
-          <span class="text-[11px] text-[#B8D4E3] block">Comunas en Alerta</span>
+          <span class="text-[11px] text-[#B8D4E3] block">Comunas con registros</span>
           <strong class="text-xl font-bold text-white">${comunasEnAlertaSet.size} <span class="text-xs font-normal opacity-70">comunas</span></strong>
         </div>
         <div class="bg-[#0B3F65] border border-[#B8492C]/60 rounded-xl p-3">
@@ -1044,7 +1750,11 @@
           <span class="text-[11px] text-[#6BB2C4] font-semibold block">Avisos / ATP</span>
           <strong class="text-xl font-bold text-[#6BB2C4]">${countAviso}</strong>
         </div>
-        <div class="bg-[#0B3F65] border border-[#f28b70]/40 rounded-xl p-3 col-span-2 sm:col-span-1">
+        <div class="bg-[#0B3F65] border border-[#B42318]/70 rounded-xl p-3">
+          <span class="text-[11px] text-[#ffb4ad] font-semibold flex items-center gap-1"><i data-lucide="flame" class="w-3 h-3"></i> Botón Rojo CONAF</span>
+          <strong class="text-xl font-bold text-[#ffb4ad]">${countBotonRojo}</strong>
+        </div>
+        <div class="bg-[#0B3F65] border border-[#f28b70]/40 rounded-xl p-3">
           <span class="text-[11px] text-[#f28b70] font-semibold block">Sismos Chile (48h)</span>
           <strong class="text-xl font-bold text-white">${recentQuakes.length} <span class="text-[10px] font-normal text-[#B8D4E3]">M≥3.0</span></strong>
         </div>
@@ -1085,9 +1795,9 @@
         const meteo = liveMeteoCache[reg.nombre];
         const meteoBadge = meteo
           ? `<div class="hidden sm:flex items-center gap-2 text-[11px] bg-[#061E31] px-2.5 py-1 rounded-lg border border-[#165685] text-[#6BB2C4]">
-               <span>🌡️ ${meteo.temperature_2m}°C</span>
-               <span>💨 ${meteo.wind_speed_10m} km/h</span>
-               <span>🌧️ ${meteo.precipitation} mm</span>
+               <span class="inline-flex items-center gap-1"><i data-lucide="thermometer" class="w-3 h-3"></i>${meteo.temperature_2m} °C</span>
+               <span class="inline-flex items-center gap-1"><i data-lucide="wind" class="w-3 h-3"></i>${meteo.wind_speed_10m} km/h</span>
+               <span class="inline-flex items-center gap-1"><i data-lucide="cloud-rain" class="w-3 h-3"></i>${meteo.precipitation} mm</span>
              </div>`
           : '';
 
@@ -1097,12 +1807,12 @@
           const isSelectedC = activeComuna === c;
           const matchesSearch = searchQ && c.toLowerCase().includes(searchQ);
           return `
-            <button onclick="toggleCommuneFilter('${reg.nombre}', '${c}')"
-              title="${c}: ${st.label} (${st.alerts.length} aviso/s) • Clic para filtrar"
+            <button onclick="toggleCommuneFilter(decodeURIComponent('${encodeURIComponent(reg.nombre)}'), decodeURIComponent('${encodeURIComponent(c)}'))"
+              title="${escapeHTML(c)}: ${escapeHTML(st.label)} (${st.alerts.length} aviso/s) • Clic para filtrar"
               class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition
               ${isSelectedC ? 'bg-[#3892D0] text-white ring-2 ring-white font-bold' : (matchesSearch ? 'bg-[#E9972C]/30 text-white border border-[#E9972C]' : 'bg-[#061E31] hover:bg-[#165685]/70 text-gray-100 border border-[#165685]')}">
               <span class="w-2.5 h-2.5 rounded-full shrink-0" style="background:${st.dot}"></span>
-              <span>${c}</span>
+              <span>${escapeHTML(c)}</span>
             </button>
           `;
         }).join('');
@@ -1111,49 +1821,53 @@
         const cardsHTML = regAlertsVisible.length > 0
           ? regAlertsVisible.map(al => {
               const ag = agencyMeta[al.agency] || { label: al.agency, color: '#6BB2C4', icon: 'info', officialUrl: '#' };
-              const lv = levelMeta[al.level];
+              const lv = levelMeta[al.level] || levelMeta.AVISO;
+              const isBotonRojo = isConafRedButton(al);
+              const sourceUrl = al.officialUrl || (isBotonRojo ? CONAF_RED_BUTTON_URL : ag.officialUrl);
+              const alertTypeBadge = isBotonRojo
+                ? `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide text-white" style="background:${BOTON_ROJO_COLOR};"><i data-lucide="flame" class="w-3 h-3"></i> BOTÓN ROJO CONAF</span>`
+                : `<span class="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider" style="background:${lv.bg}; color:${lv.text}">${lv.label}</span>`;
               const comunasBadges = (al.comunas && al.comunas.length > 0)
                 ? `<div class="flex flex-wrap gap-1 mt-1.5">
-                     ${al.comunas.map(c => `<span class="px-2 py-0.5 rounded bg-[#0B3F65] text-[#B8D4E3] text-[10px] border border-[#165685]">${c}</span>`).join('')}
+                     ${al.comunas.map(c => `<span class="px-2 py-0.5 rounded bg-[#0B3F65] text-[#B8D4E3] text-[10px] border border-[#165685]">${escapeHTML(c)}</span>`).join('')}
                    </div>`
                 : '';
+              const locationDisplay = isBotonRojo ? formatConafAlertLocation(al) : al.sector;
 
               return `
-                <div class="p-4 bg-[#061E31]/65 hover:bg-[#061E31] border-t border-[#165685]/60 transition flex flex-col gap-2.5" style="border-left: 4px solid ${lv.bg};">
+                <div class="p-4 bg-[#061E31]/65 hover:bg-[#061E31] border-t border-[#165685]/60 transition flex flex-col gap-2.5" style="border-left: 4px solid ${isBotonRojo ? BOTON_ROJO_COLOR : lv.bg};">
                   <div class="flex flex-wrap items-center justify-between gap-2">
                     <div class="flex items-center gap-2 flex-wrap">
                       <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-bold" style="background:${ag.color}25; color:${ag.color}; border:1px solid ${ag.color}60">
                         <i data-lucide="${ag.icon}" class="w-3.5 h-3.5"></i> ${ag.label}
                       </span>
-                      <span class="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider" style="background:${lv.bg}; color:${lv.text}">
-                        ${lv.label}
-                      </span>
+                      ${alertTypeBadge}
                     </div>
-                    <span class="text-[11px] text-[#B8D4E3] font-mono">${al.updated}</span>
+                    <span class="text-[11px] text-[#B8D4E3] font-mono">${escapeHTML(al.updated)}</span>
                   </div>
 
                   <div>
-                    <h3 class="font-bold text-sm sm:text-base text-white">${al.event}</h3>
-                    <div class="text-xs text-[#6BB2C4] font-medium mt-0.5">📍 ${al.sector}</div>
-                    <p class="text-xs text-[#E2EEF5] mt-1.5 leading-relaxed">${al.detail}</p>
+                    <h3 class="font-bold text-sm sm:text-base text-white">${escapeHTML(al.event)}</h3>
+                    <div class="text-xs text-[#6BB2C4] font-medium mt-0.5 flex items-start gap-1"><i data-lucide="map-pin" class="w-3.5 h-3.5 mt-0.5 shrink-0"></i><span>${escapeHTML(locationDisplay)}</span></div>
+                    <p class="text-xs text-[#E2EEF5] mt-1.5 leading-relaxed">${escapeHTML(al.detail)}</p>
                     ${comunasBadges}
                   </div>
 
                   <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[#165685]/40">
                     <div class="flex flex-wrap items-center gap-1.5">
-                      <button onclick="shareSingleWhatsApp('${al.id}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#25D366]/20 hover:bg-[#25D366] text-[#25D366] hover:text-[#061E31] border border-[#25D366]/50 text-[11px] font-bold transition">
+                      <button onclick="shareSingleWhatsApp(decodeURIComponent('${encodeURIComponent(al.id)}'))" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#25D366]/20 hover:bg-[#25D366] text-[#25D366] hover:text-[#061E31] border border-[#25D366]/50 text-[11px] font-bold transition">
                         <i data-lucide="share-2" class="w-3.5 h-3.5"></i> WhatsApp
                       </button>
-                      <button onclick="copySingleAlert('${al.id}')" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0B3F65] hover:bg-[#3892D0] text-white border border-[#165685] text-[11px] font-medium transition">
+                      <button onclick="copySingleAlert(decodeURIComponent('${encodeURIComponent(al.id)}'))" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0B3F65] hover:bg-[#3892D0] text-white border border-[#165685] text-[11px] font-medium transition">
                         <i data-lucide="copy" class="w-3.5 h-3.5"></i> Copiar
                       </button>
-                      <a href="${al.officialUrl || ag.officialUrl}" target="_blank" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#0B3F65] hover:bg-white/10 text-[#6BB2C4] border border-[#165685] text-[11px] transition">
-                        <i data-lucide="external-link" class="w-3.5 h-3.5"></i> Boletín ${al.agency}
+                      <a href="${escapeHTML(sourceUrl || '#')}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg ${isBotonRojo ? 'bg-[#B42318]/20 hover:bg-[#B42318] text-[#ffb4ad] border-[#B42318]/70' : 'bg-[#0B3F65] hover:bg-white/10 text-[#6BB2C4] border-[#165685]'} border text-[11px] transition">
+                        <i data-lucide="external-link" class="w-3.5 h-3.5"></i> ${isBotonRojo ? 'Plataforma Botón Rojo' : `Boletín ${al.agency}`}
                       </a>
                     </div>
                     <div class="flex items-center gap-3 text-[11px]">
-                      <button onclick="editAlert('${al.id}')" class="text-[#6BB2C4] hover:underline">Editar</button>
-                      <button onclick="deleteAlert('${al.id}')" class="text-[#f28b70] hover:underline">Quitar</button>
+                      <button onclick="editAlert(decodeURIComponent('${encodeURIComponent(al.id)}'))" class="text-[#6BB2C4] hover:underline">Editar</button>
+                      <button onclick="deleteAlert(decodeURIComponent('${encodeURIComponent(al.id)}'))" class="text-[#f28b70] hover:underline">Quitar</button>
                     </div>
                   </div>
                 </div>
@@ -1165,19 +1879,19 @@
         section.className = 'bg-[#0B3F65] border border-[#165685] rounded-2xl overflow-hidden shadow-lg';
         section.innerHTML = `
           <!-- Cabecera Clicable de la Región para desplegar comunas -->
-          <div onclick="toggleRegionExpand('${reg.nombre}')" class="bg-[#061E31]/85 hover:bg-[#061E31] px-4 py-3.5 border-b border-[#165685] flex flex-col sm:flex-row sm:items-center justify-between gap-2 cursor-pointer select-none transition">
+          <div onclick="toggleRegionExpand(decodeURIComponent('${encodeURIComponent(reg.nombre)}'))" class="bg-[#061E31]/85 hover:bg-[#061E31] px-4 py-3.5 border-b border-[#165685] flex flex-col sm:flex-row sm:items-center justify-between gap-2 cursor-pointer select-none transition">
             <div class="flex items-center gap-2.5 flex-wrap">
               <i data-lucide="${isExpanded ? 'chevron-down' : 'chevron-right'}" class="w-4 h-4 text-[#6BB2C4]"></i>
               <span class="px-2 py-0.5 rounded bg-[#3892D0] text-white font-mono text-xs font-bold">${reg.id}</span>
               <h2 class="font-bold text-sm sm:text-base text-white">${reg.nombre}</h2>
               <span class="text-xs px-2 py-0.5 rounded-full bg-[#0B3F65] text-[#6BB2C4] border border-[#165685]">
-                ${comunasConAlertaCount} / ${reg.comunas.length} comunas en alerta
+                ${comunasConAlertaCount} / ${reg.comunas.length} comunas con avisos o alertas
               </span>
             </div>
             <div class="flex items-center gap-2 flex-wrap">
               ${meteoBadge}
               ${regAlertsAll.length > 0 ? `
-                <button onclick="shareRegionWhatsApp('${reg.nombre}', event)" title="Compartir alertas de la región por WhatsApp"
+                <button onclick="shareRegionWhatsApp(decodeURIComponent('${encodeURIComponent(reg.nombre)}'), event)" title="Compartir alertas de la región por WhatsApp"
                   class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#25D366] hover:bg-[#1ebe5d] text-[#061E31] text-[11px] font-extrabold transition">
                   <i data-lucide="share-2" class="w-3 h-3"></i> Región WA
                 </button>
@@ -1194,7 +1908,7 @@
                   Comunas de ${reg.nombre} (${reg.comunas.length}) • <span class="font-normal text-[#B8D4E3]">Haz clic en una comuna para filtrar</span>
                 </span>
                 ${activeComuna ? `
-                  <button onclick="toggleCommuneFilter('${reg.nombre}', '${activeComuna}')" class="text-[11px] text-[#E9972C] font-semibold hover:underline">
+                  <button onclick="toggleCommuneFilter(decodeURIComponent('${encodeURIComponent(reg.nombre)}'), decodeURIComponent('${encodeURIComponent(activeComuna)}'))" class="text-[11px] text-[#E9972C] font-semibold hover:underline">
                     ✕ Quitar filtro (${activeComuna})
                   </button>
                 ` : ''}
@@ -1214,11 +1928,19 @@
       });
 
       updateMapVisuals();
+      if (typeof mapBuilderReady !== 'undefined' && mapBuilderReady) updateBuilderAlertLayer();
       lucide.createIcons();
     }
 
     function applyTemplate(type) {
       const templates = {
+        botonrojo: {
+          agency: 'CONAF', level: 'AVISO', recordType: 'BOTON_ROJO',
+          event: 'Botón Rojo CONAF — Condiciones favorables para incendios forestales',
+          sector: 'Sectores y comunas indicados en el pronóstico oficial de CONAF',
+          detail: 'Completar con la información del reporte vigente de CONAF: fecha y periodo de validez, sectores o comunas identificadas y condiciones meteorológicas asociadas. Registrar únicamente la cobertura señalada por la fuente oficial.',
+          officialUrl: CONAF_RED_BUTTON_URL
+        },
         marejadas: {
           agency: 'ARMADA', level: 'AVISO',
           event: 'Marejadas Anormales',
@@ -1252,20 +1974,51 @@
       };
       const t = templates[type];
       if (!t) return;
+      setModalRecordType(t.recordType || 'GENERAL');
       document.getElementById('inAgency').value = t.agency;
       document.getElementById('inLevel').value = t.level;
       document.getElementById('inEvent').value = t.event;
       document.getElementById('inSector').value = t.sector;
       document.getElementById('inDetail').value = t.detail;
+      document.getElementById('inUrl').value = t.officialUrl || '';
+      document.getElementById('modalFormTitle').innerHTML = t.recordType === 'BOTON_ROJO'
+        ? `<i data-lucide="flame" class="w-5 h-5 text-[#ffb4ad]"></i> Registrar Botón Rojo CONAF`
+        : `<i data-lucide="bell-plus" class="w-5 h-5 text-[#E9972C]"></i> Ingresar Alerta / Aviso Oficial`;
+      lucide.createIcons();
     }
 
-    function openAddAlertModal() {
+    function setModalRecordType(type) {
+      const isBotonRojo = type === 'BOTON_ROJO';
+      document.getElementById('inRecordType').value = isBotonRojo ? 'BOTON_ROJO' : 'GENERAL';
+      const levelInput = document.getElementById('inLevel');
+      const label = document.getElementById('inLevelLabel');
+      const hint = document.getElementById('inLevelHint');
+      levelInput.disabled = isBotonRojo;
+      if (isBotonRojo) {
+        levelInput.value = 'AVISO';
+        document.getElementById('inAgency').value = 'CONAF';
+        label.textContent = 'Nivel / severidad';
+        hint.textContent = 'No aplica: Botón Rojo es un indicador preventivo de CONAF, no equivale a una Alerta Roja ni a una alerta SENAPRED.';
+      } else {
+        label.textContent = 'Nivel / Severidad';
+        hint.textContent = 'Los niveles corresponden a la clasificación del aviso o alerta. El Botón Rojo CONAF se identifica por separado.';
+      }
+    }
+
+    function openAddAlertModal(templateType = '') {
+      const entryForm = document.querySelector('#addAlertModal form');
+      const activeRegion = document.getElementById('filterRegion').value;
+      if (entryForm) entryForm.reset();
       document.getElementById('editAlertId').value = '';
       document.getElementById('inUrl').value = '';
+      setModalRecordType('GENERAL');
+      document.getElementById('inLevel').value = 'ALARMA';
+      if (activeRegion && activeRegion !== 'TODAS') document.getElementById('inRegion').value = activeRegion;
       populateModalCommunes([]);
       document.getElementById('modalFormTitle').innerHTML = `<i data-lucide="bell-plus" class="w-5 h-5 text-[#E9972C]"></i> Ingresar Alerta / Aviso Oficial`;
       document.getElementById('addAlertModal').classList.remove('hidden');
       document.getElementById('addAlertModal').classList.add('flex');
+      if (templateType) applyTemplate(templateType);
       lucide.createIcons();
     }
 
@@ -1275,8 +2028,10 @@
       document.getElementById('editAlertId').value = al.id;
       document.getElementById('inRegion').value = al.region;
       populateModalCommunes(al.comunas || []);
+      const recordType = al.recordType || (isConafRedButton(al) ? 'BOTON_ROJO' : 'GENERAL');
+      setModalRecordType(recordType);
       document.getElementById('inAgency').value = al.agency;
-      document.getElementById('inLevel').value = al.level;
+      document.getElementById('inLevel').value = al.level || 'AVISO';
       document.getElementById('inEvent').value = al.event;
       document.getElementById('inSector').value = al.sector;
       document.getElementById('inDetail').value = al.detail;
@@ -1297,20 +2052,23 @@
       const editId = document.getElementById('editAlertId').value;
       const selectedComunas = Array.from(document.querySelectorAll('input[name="modalComuna"]:checked')).map(cb => cb.value);
       const regName = document.getElementById('inRegion').value;
-      const level = document.getElementById('inLevel').value;
+      const recordType = document.getElementById('inRecordType').value || 'GENERAL';
+      const isBotonRojo = recordType === 'BOTON_ROJO';
+      const level = isBotonRojo ? 'AVISO' : document.getElementById('inLevel').value;
       const eventName = document.getElementById('inEvent').value;
-      const agency = document.getElementById('inAgency').value;
+      const agency = isBotonRojo ? 'CONAF' : document.getElementById('inAgency').value;
 
       const payload = {
         id: editId || ('al_' + Date.now()),
         region: regName,
         agency: agency,
+        recordType: isBotonRojo ? 'BOTON_ROJO' : 'GENERAL',
         level: level,
         event: eventName,
         comunas: selectedComunas,
         sector: document.getElementById('inSector').value,
         detail: document.getElementById('inDetail').value,
-        officialUrl: document.getElementById('inUrl').value.trim(),
+        officialUrl: document.getElementById('inUrl').value.trim() || (isBotonRojo ? CONAF_RED_BUTTON_URL : ''),
         updated: new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }) + ' hrs'
       };
 
@@ -1320,14 +2078,16 @@
         addLogEntry(
           `Actualiza [${agency}] ${eventName} • ${selectedComunas.length} comunas`,
           `${regName}: ${selectedComunas.length > 0 ? selectedComunas.join(', ') : payload.sector}`,
-          level
+          level,
+          recordType
         );
       } else {
         alerts.unshift(payload);
         addLogEntry(
-          `Nueva ${levelMeta[level].label} [${agency}] • ${selectedComunas.length} comunas`,
+          `Nueva ${isBotonRojo ? 'BOTÓN ROJO CONAF' : levelMeta[level].label} [${agency}] • ${selectedComunas.length} comunas`,
           `${regName}: ${selectedComunas.length > 0 ? selectedComunas.join(', ') : payload.sector}`,
-          level
+          level,
+          recordType
         );
       }
 
@@ -1335,8 +2095,9 @@
       saveAlerts();
       renderDashboard();
       e.target.reset();
+      setModalRecordType('GENERAL');
       closeAddAlertModal();
-      showToast('Alerta y comunas actualizadas');
+      showToast(isBotonRojo ? 'Botón Rojo CONAF registrado en el monitor' : 'Alerta y comunas actualizadas');
     }
 
     function deleteAlert(id) {
@@ -1354,7 +2115,7 @@
     }
 
     function exportCSV() {
-      const headers = ['ID_Region', 'Region', 'Comunas', 'Organismo', 'Nivel', 'Fenomeno', 'Sector', 'Detalle', 'Actualizacion'];
+      const headers = ['ID_Region', 'Region', 'Comunas', 'Organismo', 'Tipo_Registro', 'Nivel', 'Fenomeno', 'Sector', 'Detalle', 'Actualizacion'];
       const rows = alerts.map(a => {
         const regObj = REGIONES.find(r => r.nombre === a.region);
         return [
@@ -1362,9 +2123,10 @@
           `"${a.region}"`,
           `"${(a.comunas || []).join('; ')}"`,
           `"${a.agency}"`,
-          `"${levelMeta[a.level].label}"`,
-          `"${a.event.replace(/"/g, '""')}"`,
-          `"${a.sector.replace(/"/g, '""')}"`,
+          `"${isConafRedButton(a) ? 'BOTON_ROJO_CONAF' : 'ALERTA_AVISO'}"`,
+          `"${isConafRedButton(a) ? 'No aplica: indicador CONAF' : (levelMeta[a.level]?.label || a.level)}"`,
+          `"${String(a.event || '').replace(/"/g, '""')}"`,
+          `"${(isConafRedButton(a) ? formatConafAlertLocation(a) : a.sector).replace(/"/g, '""')}"`,
           `"${a.detail.replace(/"/g, '""')}"`,
           `"${a.updated}"`
         ].join(',');
@@ -1382,6 +2144,7 @@
       generateReportText('whatsapp');
       document.getElementById('reportModal').classList.remove('hidden');
       document.getElementById('reportModal').classList.add('flex');
+      lucide.createIcons();
     }
 
     function generateReportText(mode) {
@@ -1396,18 +2159,18 @@
       }
 
       const now = new Date().toLocaleString('es-CL');
-      let lines = [];
+      const lines = [];
 
       if (mode === 'whatsapp') {
-        lines.push(`${WA_ICONS.radar} *BOLET\u00CDN NACIONAL DE ALERTAS POR REGI\u00D3N*`);
-        lines.push(`${WA_ICONS.clock} _Emisi\u00F3n: ${now}_`);
-        lines.push(`_Fuentes: DMC \u2022 Armada \u2022 SENAPRED \u2022 SERNAGEOMIN \u2022 CONAF \u2022 SHOA_`);
+        lines.push(`${WA_ICONS.radar} *BOLETÍN NACIONAL DE ALERTAS POR REGIÓN*`);
+        lines.push(`${WA_ICONS.clock} _Emisión: ${now}_`);
+        lines.push(`_Fuentes: DMC • Armada • SENAPRED • SERNAGEOMIN • CONAF • SHOA_`);
         lines.push('━━━━━━━━━━━━━━\n');
 
         REGIONES.forEach(reg => {
           const regAlerts = alerts
             .filter(a => a.region === reg.nombre)
-            .sort((a, b) => levelMeta[b.level].weight - levelMeta[a.level].weight);
+            .sort((a, b) => (levelMeta[b.level]?.weight || 0) - (levelMeta[a.level]?.weight || 0));
 
           if (regAlerts.length > 0) {
             lines.push(`${WA_ICONS.pin} *[${reg.id}] ${reg.nombre.toUpperCase()}*`);
@@ -1417,22 +2180,27 @@
             }
             lines.push('');
             regAlerts.forEach(al => {
-              const lv = levelMeta[al.level];
-              lines.push(`   ${lv.emoji} *[${al.agency}] ${al.event}*`);
-              lines.push(`      \u25AA *Nivel:* ${lv.label}`);
+              const lv = levelMeta[al.level] || levelMeta.AVISO;
+              const ag = agencyMeta[al.agency] || { label: al.agency };
+              const isRedButton = isConafRedButton(al);
+              const classification = isRedButton ? 'BOTÓN ROJO CONAF' : lv.label;
+              const locationLabel = isRedButton ? 'Ubicación' : 'Sector';
+              const locationText = isRedButton ? formatConafAlertLocation(al) : al.sector;
+              lines.push(`   ${lv.emoji} *[${ag.label}] ${al.event}*`);
+              lines.push(`      ${WA_ICONS.town} *Nivel:* ${classification}`);
               if (al.comunas && al.comunas.length > 0) {
-                lines.push(`      \u25AA *Comunas:* ${al.comunas.join(', ')}`);
+                lines.push(`      ${WA_ICONS.town} *Comunas:* ${al.comunas.join(', ')}`);
               }
-              lines.push(`      \u25AA *Sector:* ${al.sector}`);
-              lines.push(`      \u25AA *Detalle:* ${al.detail}\n`);
+              lines.push(`      ${WA_ICONS.map} *${locationLabel}:* ${locationText}`);
+              if (!isRedButton) lines.push(`      ${WA_ICONS.note} *Detalle:* ${al.detail}\n`);
             });
             lines.push('──────────────\n');
           }
         });
-        lines.push('_Consolidado por Kamila Guerrero \u2022 Ge\u00F3loga_');
+        lines.push('_Consolidado por Kamila Guerrero • Geóloga_');
       } else {
         lines.push('====================================================================');
-        lines.push('BOLETÍN CONSOLIDADO DE ALERTAS MULTI-ORGANISMO POR REGIÓN Y COMUNA');
+        lines.push('BOLETÍN CONSOLIDADO DE AVISOS Y ALERTAS MULTI-ORGANISMO POR REGIÓN Y COMUNA');
         lines.push(`Responsable: Kamila Guerrero (Geóloga) | Emisión: ${now}`);
         lines.push('Fuentes: DMC • Armada/DIRECTEMAR • SENAPRED • SERNAGEOMIN • CONAF • SHOA');
         lines.push('====================================================================\n');
@@ -1440,21 +2208,22 @@
         REGIONES.forEach(reg => {
           const regAlerts = alerts
             .filter(a => a.region === reg.nombre)
-            .sort((a, b) => levelMeta[b.level].weight - levelMeta[a.level].weight);
+            .sort((a, b) => (levelMeta[b.level]?.weight || 0) - (levelMeta[a.level]?.weight || 0));
 
           if (regAlerts.length > 0) {
-            lines.push(`▶ [${reg.id}] ${reg.nombre.toUpperCase()}`);
+            lines.push(`[${reg.id}] ${reg.nombre.toUpperCase()}`);
             const meteo = liveMeteoCache[reg.nombre];
             if (meteo) {
               lines.push(`   Condición Actual: Temp ${meteo.temperature_2m}°C | Viento ${meteo.wind_speed_10m} km/h | Precip ${meteo.precipitation} mm`);
             }
             regAlerts.forEach(al => {
-              lines.push(`   • [${al.agency}] [${levelMeta[al.level].label}] ${al.event}`);
+              const classification = isConafRedButton(al) ? 'BOTÓN ROJO CONAF' : (levelMeta[al.level]?.label || al.level);
+              lines.push(`   • [${al.agency}] [${classification}] ${al.event}`);
               if (al.comunas && al.comunas.length > 0) {
                 lines.push(`     - Comunas: ${al.comunas.join(', ')}`);
               }
-              lines.push(`     - Cobertura: ${al.sector}`);
-              lines.push(`     - Detalle: ${al.detail}`);
+              lines.push(`     - Cobertura: ${isConafRedButton(al) ? formatConafAlertLocation(al) : al.sector}`);
+              if (!isConafRedButton(al)) lines.push(`     - Detalle: ${al.detail}`);
             });
             lines.push('');
           }
@@ -1467,17 +2236,20 @@
 
     function sendReportDirectWhatsApp() {
       const text = document.getElementById('reportText').value;
-      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank');
+      window.open(`https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`, '_blank', 'noopener');
     }
 
     function closeReportModal() {
       document.getElementById('reportModal').classList.add('hidden');
       document.getElementById('reportModal').classList.remove('flex');
     }
-    function copyReport() {
+    async function copyReport() {
       const txt = document.getElementById('reportText');
-      txt.select();
-      navigator.clipboard.writeText(txt.value);
+      try {
+        await navigator.clipboard.writeText(txt.value);
+      } catch (error) {
+        txt.select(); document.execCommand('copy');
+      }
       showToast('Boletín copiado al portapapeles');
     }
     function downloadReport() {
@@ -1489,17 +2261,435 @@
       a.click();
     }
 
+
+    // ---------------------------------------------------------------------
+    // GENERADOR CARTOGRÁFICO INDEPENDIENTE
+    // No modifica el mapa principal ni las alertas del monitor.
+    // ---------------------------------------------------------------------
+    let mapBuilder = null;
+    let mapBuilderBaseLayer = null;
+    let mapBuilderDrawnItems = null;
+    let mapBuilderAlertLayer = null;
+    let mapBuilderQuakeLayer = null;
+    let mapBuilderConafLayer = null;
+    let mapBuilderDrawControl = null;
+    let mapBuilderReady = false;
+    const MAP_DRAWINGS_KEY = 'kamila_map_drawings_v1';
+    const MAP_PROJECTS_KEY = 'kamila_map_projects_v1';
+
+    function setMapBuilderStatus(message) {
+      const el = document.getElementById('mapBuilderStatus');
+      if (el) el.textContent = message;
+    }
+
+    function populateMapBuilderRegions() {
+      const select = document.getElementById('mapBuilderRegion');
+      if (!select || select.options.length > 1) return;
+      REGIONES.forEach(reg => {
+        const option = document.createElement('option');
+        option.value = reg.nombre;
+        option.textContent = `${reg.id} — ${reg.nombre}`;
+        select.appendChild(option);
+      });
+    }
+
+    function openMapBuilder() {
+      const modal = document.getElementById('mapBuilderModal');
+      modal.classList.remove('hidden');
+      document.body.classList.add('overflow-hidden');
+      populateMapBuilderRegions();
+      populateSavedMapProjects();
+      lucide.createIcons();
+      requestAnimationFrame(() => {
+        try {
+          if (!window.L) throw new Error('Leaflet no está disponible. Comprueba la conexión e inténtalo nuevamente.');
+          if (!mapBuilderReady) initMapBuilder();
+          else mapBuilder.invalidateSize(true);
+          setTimeout(() => mapBuilder && mapBuilder.invalidateSize(true), 180);
+        } catch (error) {
+          console.error(error);
+          setMapBuilderStatus(error.message || 'No se pudo inicializar el mapa.');
+        }
+      });
+    }
+
+    function closeMapBuilder() {
+      document.getElementById('mapBuilderModal').classList.add('hidden');
+      document.body.classList.remove('overflow-hidden');
+    }
+
+    function populateSavedMapProjects(selectedId = '') {
+      const select = document.getElementById('savedMapProjects');
+      if (!select) return;
+      const projects = readStorageJSON(MAP_PROJECTS_KEY, []);
+      const safeProjects = Array.isArray(projects) ? projects : [];
+      select.innerHTML = '<option value="">Seleccionar un mapa guardado…</option>';
+      safeProjects.forEach(project => {
+        const option = document.createElement('option');
+        option.value = project.id;
+        const saved = project.savedAt ? new Date(project.savedAt).toLocaleDateString('es-CL') : '';
+        option.textContent = `${project.title || 'Mapa sin título'}${saved ? ` · ${saved}` : ''}`;
+        select.appendChild(option);
+      });
+      if (selectedId) select.value = selectedId;
+    }
+
+    function initMapBuilder() {
+      if (mapBuilderReady) return;
+      mapBuilder = L.map('mapBuilderCanvas', { zoomControl: true, preferCanvas: true }).setView([-35.6, -71.5], 4);
+      mapBuilderBaseLayer = createBuilderBaseLayer(document.getElementById('mapBuilderBasemap').value);
+      mapBuilderBaseLayer.addTo(mapBuilder);
+
+      mapBuilderDrawnItems = new L.FeatureGroup();
+      mapBuilder.addLayer(mapBuilderDrawnItems);
+      mapBuilderAlertLayer = L.layerGroup().addTo(mapBuilder);
+      mapBuilderQuakeLayer = L.layerGroup().addTo(mapBuilder);
+      mapBuilderConafLayer = L.geoJSON(null, {
+        style: () => ({ color: BOTON_ROJO_COLOR, weight: 2, opacity: 0.95, fillColor: BOTON_ROJO_COLOR, fillOpacity: 0.24 }),
+        onEachFeature: (feature, layer) => {
+          const p = feature.properties || {};
+          layer.bindPopup(`<div style="min-width:210px;color:#102536"><strong style="color:${BOTON_ROJO_COLOR}">BOTÓN ROJO CONAF</strong><br><b>${escapeHTML(formatConafFeatureLocation(p))}</b><br><small>Área territorial publicada por la capa consultada.</small></div>`);
+        }
+      }).addTo(mapBuilder);
+
+      if (L.Control && L.Control.Draw) {
+        mapBuilderDrawControl = new L.Control.Draw({
+          position: 'topleft',
+          draw: {
+            polyline: { shapeOptions: { color: '#6BB2C4', weight: 4 } },
+            polygon: { allowIntersection: false, showArea: true, shapeOptions: { color: '#E9972C', weight: 2, fillOpacity: 0.2 } },
+            rectangle: { shapeOptions: { color: '#3892D0', weight: 2, fillOpacity: 0.16 } },
+            circle: { shapeOptions: { color: '#B8492C', weight: 2, fillOpacity: 0.16 } },
+            marker: true,
+            circlemarker: false
+          },
+          edit: { featureGroup: mapBuilderDrawnItems, remove: true }
+        });
+        mapBuilder.addControl(mapBuilderDrawControl);
+      } else {
+        setMapBuilderStatus('La herramienta de dibujo no se cargó. Recarga la página con conexión para habilitarla.');
+      }
+
+      mapBuilder.on(L.Draw ? L.Draw.Event.CREATED : 'draw:created', event => {
+        const label = prompt('Nombre o descripción de este elemento cartográfico:', 'Elemento cartográfico');
+        const cleanLabel = (label || 'Elemento cartográfico').trim().slice(0, 140);
+        event.layer.feature = event.layer.feature || { type: 'Feature', properties: {} };
+        event.layer.feature.properties = { ...(event.layer.feature.properties || {}), name: cleanLabel };
+        event.layer.bindPopup(escapeHTML(cleanLabel));
+        mapBuilderDrawnItems.addLayer(event.layer);
+        persistMapDrawings();
+        setMapBuilderStatus(`Elemento añadido: ${cleanLabel}`);
+      });
+      mapBuilder.on(L.Draw ? L.Draw.Event.EDITED : 'draw:edited', () => {
+        persistMapDrawings(); setMapBuilderStatus('Dibujos actualizados.');
+      });
+      mapBuilder.on(L.Draw ? L.Draw.Event.DELETED : 'draw:deleted', () => {
+        persistMapDrawings(); setMapBuilderStatus('Elemento eliminado.');
+      });
+
+      restoreMapDrawings();
+      updateBuilderAlertLayer();
+      updateBuilderQuakeLayer();
+      updateBuilderConafLayer();
+      mapBuilderReady = true;
+      setMapBuilderStatus('Mapa listo. Los dibujos se guardan automáticamente en este dispositivo.');
+    }
+
+    function createBuilderBaseLayer(mode) {
+      const options = { maxZoom: 18, crossOrigin: true };
+      if (mode === 'esri_topo') {
+        return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}', options);
+      }
+      if (mode === 'esri_sat') {
+        return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', options);
+      }
+      return L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', options);
+    }
+
+    function changeBuilderBasemap() {
+      if (!mapBuilder) return;
+      const next = createBuilderBaseLayer(document.getElementById('mapBuilderBasemap').value);
+      if (mapBuilderBaseLayer) mapBuilder.removeLayer(mapBuilderBaseLayer);
+      mapBuilderBaseLayer = next.addTo(mapBuilder);
+      setMapBuilderStatus('Cartografía base actualizada.');
+    }
+
+    function focusBuilderRegion() {
+      if (!mapBuilder) return;
+      const name = document.getElementById('mapBuilderRegion').value;
+      if (name === 'TODAS') mapBuilder.setView([-35.6, -71.5], 4);
+      else {
+        const reg = REGIONES.find(item => item.nombre === name);
+        if (reg) mapBuilder.setView([reg.lat, reg.lon], 7);
+      }
+    }
+
+    function updateBuilderAlertLayer() {
+      if (!mapBuilderAlertLayer) return;
+      mapBuilderAlertLayer.clearLayers();
+      if (!document.getElementById('mapShowAlerts').checked) return;
+      alerts.forEach(al => {
+        if (al.isConafSynced && conafBotonRojoFeatures.length) return;
+        const reg = REGIONES.find(item => item.nombre === al.region);
+        if (!reg) return;
+        const level = levelMeta[al.level] || levelMeta.AVISO;
+        const isBotonRojo = isConafRedButton(al);
+        const markerColor = isBotonRojo ? BOTON_ROJO_COLOR : level.bg;
+        const marker = L.circleMarker([reg.lat, reg.lon], {
+          radius: 7 + (level.weight || 1), color: '#FFFFFF', weight: 1.5,
+          fillColor: markerColor, fillOpacity: 0.9
+        });
+        const communes = (al.comunas || []).join(', ') || 'No especificadas';
+        const classification = isBotonRojo ? 'BOTÓN ROJO CONAF' : level.label;
+        marker.bindPopup(
+          `<div style="min-width:190px;color:#102536"><strong>${escapeHTML(al.event)}</strong><br>`+
+          `<span>${escapeHTML(al.region)}</span><br><span style="font-weight:700;color:${markerColor}">${escapeHTML(classification)}</span><br>`+
+          `<small>Comunas: ${escapeHTML(communes)}</small><br>`+
+          `<small><b>Referencia regional aproximada.</b> No representa una coordenada exacta del evento.</small></div>`
+        );
+        marker.feature = { type: 'Feature', properties: { kind: 'alert-reference', alertId: al.id, event: al.event, region: al.region, agency: al.agency, record_type: isBotonRojo ? 'BOTON_ROJO' : 'GENERAL', level: al.level, communes: al.comunas || [] }, geometry: { type: 'Point', coordinates: [reg.lon, reg.lat] } };
+        marker.addTo(mapBuilderAlertLayer);
+      });
+    }
+
+    function updateBuilderConafLayer() {
+      if (!mapBuilderConafLayer) return;
+      mapBuilderConafLayer.clearLayers();
+      const toggle = document.getElementById('mapShowConaf');
+      if (toggle && !toggle.checked) return;
+      if (!Array.isArray(conafBotonRojoFeatures) || !conafBotonRojoFeatures.length) {
+        if (mapBuilderReady) setMapBuilderStatus('La capa Botón Rojo CONAF aún no contiene geometrías sincronizadas. Ejecuta «Sincronizar CONAF».');
+        return;
+      }
+      mapBuilderConafLayer.addData({ type: 'FeatureCollection', features: conafBotonRojoFeatures });
+    }
+
+    function updateBuilderQuakeLayer() {
+      if (!mapBuilderQuakeLayer) return;
+      mapBuilderQuakeLayer.clearLayers();
+      if (!document.getElementById('mapShowQuakes').checked) return;
+      recentQuakes.forEach(q => {
+        if (!q.geometry || !q.geometry.coordinates) return;
+        const [lon, lat, depth] = q.geometry.coordinates;
+        const mag = Number(q.properties && q.properties.mag);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon) || !Number.isFinite(mag)) return;
+        const marker = L.circleMarker([lat, lon], { radius: Math.max(4, mag * 1.8), color: '#fff', weight: 1, fillColor: '#f28b70', fillOpacity: 0.75 });
+        const place = q.properties.place || 'Ubicación no informada';
+        marker.bindPopup(`<div style="color:#102536"><strong>Sismo M ${mag.toFixed(1)}</strong><br>${escapeHTML(place)}<br>Profundidad: ${Number(depth || 0).toFixed(1)} km</div>`);
+        marker.feature = { type: 'Feature', properties: { kind: 'earthquake-reference', magnitude: mag, place, depth_km: depth, time: q.properties.time }, geometry: { type: 'Point', coordinates: [lon, lat] } };
+        marker.addTo(mapBuilderQuakeLayer);
+      });
+    }
+
+    function persistMapDrawings() {
+      if (!mapBuilderDrawnItems) return;
+      const featureCollection = mapBuilderDrawnItems.toGeoJSON();
+      featureCollection.features.forEach((feature, index) => {
+        const layer = mapBuilderDrawnItems.getLayers()[index];
+        if (layer && layer.options) {
+          feature.properties = { ...(feature.properties || {}), ...((layer.feature && layer.feature.properties) || {}) };
+          feature.properties._style = {
+            color: layer.options.color || '#E9972C',
+            weight: layer.options.weight || 2,
+            opacity: layer.options.opacity ?? 1,
+            fillColor: layer.options.fillColor || layer.options.color || '#E9972C',
+            fillOpacity: layer.options.fillOpacity ?? 0.2
+          };
+        }
+      });
+      localStorage.setItem(MAP_DRAWINGS_KEY, JSON.stringify(featureCollection));
+    }
+
+    function restoreMapDrawings() {
+      if (!mapBuilderDrawnItems) return;
+      const saved = readStorageJSON(MAP_DRAWINGS_KEY, { type: 'FeatureCollection', features: [] });
+      if (!saved || saved.type !== 'FeatureCollection' || !Array.isArray(saved.features)) return;
+      const layer = L.geoJSON(saved, {
+        style: feature => feature.properties && feature.properties._style ? feature.properties._style : { color: '#E9972C', weight: 2, fillOpacity: 0.2 },
+        pointToLayer: (feature, latlng) => L.marker(latlng),
+        onEachFeature: (feature, item) => {
+          const label = feature.properties && feature.properties.name;
+          if (label) item.bindPopup(escapeHTML(label));
+        }
+      });
+      layer.eachLayer(item => mapBuilderDrawnItems.addLayer(item));
+    }
+
+    function clearMapDrawings() {
+      if (!mapBuilderDrawnItems || mapBuilderDrawnItems.getLayers().length === 0) return;
+      if (!confirm('¿Quieres eliminar todos los elementos dibujados en este mapa?')) return;
+      mapBuilderDrawnItems.clearLayers();
+      persistMapDrawings();
+      setMapBuilderStatus('Se eliminaron los dibujos del mapa.');
+    }
+
+    function getMapExportFeatureCollection() {
+      const features = [];
+      if (mapBuilderDrawnItems) {
+        const drawings = mapBuilderDrawnItems.toGeoJSON();
+        drawings.features.forEach((feature, index) => {
+          const layer = mapBuilderDrawnItems.getLayers()[index];
+          if (layer && layer.options) feature.properties = {
+            ...(feature.properties || {}),
+            ...((layer.feature && layer.feature.properties) || {}),
+            style: {
+              color: layer.options.color || '#E9972C', weight: layer.options.weight || 2,
+              fillColor: layer.options.fillColor || layer.options.color || '#E9972C',
+              fillOpacity: layer.options.fillOpacity ?? 0.2
+            }
+          };
+          features.push(feature);
+        });
+      }
+      if (document.getElementById('mapShowAlerts').checked) {
+        mapBuilderAlertLayer.eachLayer(layer => { if (layer.feature) features.push(layer.feature); });
+      }
+      if (document.getElementById('mapShowQuakes').checked) {
+        mapBuilderQuakeLayer.eachLayer(layer => { if (layer.feature) features.push(layer.feature); });
+      }
+      const conafToggle = document.getElementById('mapShowConaf');
+      if ((!conafToggle || conafToggle.checked) && Array.isArray(conafBotonRojoFeatures)) {
+        conafBotonRojoFeatures.forEach(feature => features.push({ ...feature, properties: { ...(feature.properties || {}), record_type: 'BOTON_ROJO', source: 'CONAF / GEPRIF' } }));
+      }
+      return { type: 'FeatureCollection', name: document.getElementById('mapProjectTitle').value.trim() || 'Mapa de alertas', generatedAt: new Date().toISOString(), features };
+    }
+
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url; link.download = filename; document.body.appendChild(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    function downloadMapGeoJSON() {
+      if (!mapBuilderReady) return;
+      const data = getMapExportFeatureCollection();
+      downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/geo+json;charset=utf-8' }), `Mapa_Alertas_${new Date().toISOString().slice(0,10)}.geojson`);
+      setMapBuilderStatus(`${data.features.length} elementos exportados a GeoJSON.`);
+    }
+
+    function saveMapProject() {
+      if (!mapBuilderReady || !mapBuilder) return;
+      persistMapDrawings();
+      const drawingsSnapshot = readStorageJSON(MAP_DRAWINGS_KEY, { type: 'FeatureCollection', features: [] });
+      const projects = readStorageJSON(MAP_PROJECTS_KEY, []);
+      const center = mapBuilder.getCenter();
+      const project = {
+        id: `map_${Date.now()}`,
+        title: document.getElementById('mapProjectTitle').value.trim() || 'Mapa de alertas',
+        savedAt: new Date().toISOString(),
+        center: [center.lat, center.lng], zoom: mapBuilder.getZoom(),
+        basemap: document.getElementById('mapBuilderBasemap').value,
+        drawings: drawingsSnapshot,
+        geojson: getMapExportFeatureCollection()
+      };
+      const safeProjects = Array.isArray(projects) ? projects.filter(item => item.id !== project.id) : [];
+      safeProjects.unshift(project);
+      localStorage.setItem(MAP_PROJECTS_KEY, JSON.stringify(safeProjects.slice(0, 10)));
+      persistMapDrawings();
+      populateSavedMapProjects(project.id);
+      setMapBuilderStatus(`Proyecto «${project.title}» guardado en este dispositivo. Historial: ${Math.min(safeProjects.length, 10)} proyectos.`);
+    }
+
+    function loadMapProject() {
+      if (!mapBuilderReady || !mapBuilderDrawnItems) {
+        setMapBuilderStatus('El mapa aún se está inicializando.');
+        return;
+      }
+      const id = document.getElementById('savedMapProjects').value;
+      if (!id) return;
+      const projects = readStorageJSON(MAP_PROJECTS_KEY, []);
+      const project = (Array.isArray(projects) ? projects : []).find(item => item.id === id);
+      if (!project) {
+        setMapBuilderStatus('No se encontró el proyecto guardado.');
+        return;
+      }
+      document.getElementById('mapProjectTitle').value = project.title || 'Mapa de alertas';
+      if (project.basemap) {
+        document.getElementById('mapBuilderBasemap').value = project.basemap;
+        changeBuilderBasemap();
+      }
+      if (Array.isArray(project.center) && project.center.length === 2) {
+        mapBuilder.setView(project.center, Number(project.zoom) || 4);
+      }
+      mapBuilderDrawnItems.clearLayers();
+      const drawings = project.drawings || { type: 'FeatureCollection', features: [] };
+      const restored = L.geoJSON(drawings, {
+        style: feature => feature.properties && feature.properties._style ? feature.properties._style : (feature.properties && feature.properties.style ? feature.properties.style : { color: '#E9972C', weight: 2, fillOpacity: 0.2 }),
+        pointToLayer: (feature, latlng) => L.marker(latlng),
+        onEachFeature: (feature, layer) => {
+          const label = feature.properties && feature.properties.name;
+          if (label) layer.bindPopup(escapeHTML(label));
+          layer.feature = feature;
+        }
+      });
+      restored.eachLayer(layer => mapBuilderDrawnItems.addLayer(layer));
+      persistMapDrawings();
+      updateBuilderAlertLayer();
+      updateBuilderQuakeLayer();
+      setMapBuilderStatus(`Proyecto «${project.title}» cargado.`);
+    }
+
+    async function exportMapPNG() {
+      if (!mapBuilderReady) return;
+      if (typeof html2canvas !== 'function') {
+        setMapBuilderStatus('No se cargó el módulo PNG. Usa Imprimir / PDF o exporta GeoJSON.');
+        return;
+      }
+      setMapBuilderStatus('Preparando imagen del mapa…');
+      try {
+        await new Promise(resolve => setTimeout(resolve, 350));
+        const canvas = await html2canvas(document.getElementById('mapBuilderCanvas'), {
+          useCORS: true, allowTaint: false, backgroundColor: '#041524', scale: 2,
+          logging: false, imageTimeout: 15000
+        });
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        if (!blob) throw new Error('No fue posible crear el archivo de imagen.');
+        downloadBlob(blob, `Mapa_Alertas_${new Date().toISOString().slice(0,10)}.png`);
+        setMapBuilderStatus('Imagen PNG exportada.');
+      } catch (error) {
+        console.warn('La captura PNG fue bloqueada por el proveedor cartográfico:', error);
+        setMapBuilderStatus('El proveedor cartográfico bloqueó la captura PNG. Usa Imprimir / PDF para guardar el mapa.');
+        showToast('No se pudo capturar el mapa como PNG; prueba Imprimir / PDF.');
+      }
+    }
+
+    function printMapBuilder() {
+      if (!mapBuilderReady) return;
+      document.getElementById('mapPrintTitle').textContent = document.getElementById('mapProjectTitle').value.trim() || 'Mapa de alertas';
+      document.getElementById('mapPrintMeta').textContent = `Generado el ${new Date().toLocaleString('es-CL')} · Cartografía base Esri`;
+      mapBuilder.invalidateSize(true);
+      setTimeout(() => window.print(), 220);
+    }
+
+    // Mantener las capas del generador sincronizadas después de cada actualización
+    // de alertas o sismos, sin modificar ni recentrar el mapa principal.
+    const renderDashboardBase = renderDashboard;
+    renderDashboard = function() {
+      renderDashboardBase();
+      if (mapBuilderReady) {
+        updateBuilderAlertLayer();
+        updateBuilderQuakeLayer();
+        updateBuilderConafLayer();
+      }
+    };
+
+
     function updateClock() {
       document.getElementById('liveClock').textContent = new Date().toLocaleString('es-CL');
     }
 
     initSelectors();
     initMap();
+    lucide.createIcons();
     updateClock();
     setInterval(updateClock, 1000);
     renderChangelog();
     renderDashboard();
+    updateConafSyncStatus();
     fetchLiveAll();
+    // CONAF publica la condición de Botón Rojo en forma diaria; se vuelve a consultar periódicamente.
+    setInterval(() => fetchConafRedButton({ silent: true }), 30 * 60 * 1000);
   </script>
 </body>
 </html>
